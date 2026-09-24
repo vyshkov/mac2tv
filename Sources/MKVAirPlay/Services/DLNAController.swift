@@ -6,14 +6,20 @@ public final class DLNAController: Sendable {
     private init() {}
 
     // MARK: - Set AV Transport URI
-    public func setAVTransportURI(device: DLNADevice, mediaURL: URL, title: String) async throws {
+    public func setAVTransportURI(device: DLNADevice, mediaURL: URL, title: String, subtitleURL: URL? = nil) async throws {
         let ext = mediaURL.pathExtension
         let mime = NetworkHelper.mimeType(for: ext)
         let dlnaProtocolInfo = "http-get:*:\(mime):*;DLNA.ORG_OP=01;DLNA.ORG_CI=0;DLNA.ORG_FLAGS=01700000000000000000000000000000"
         let escapedTitle = escapeXML(title)
         let escapedURL = escapeXML(mediaURL.absoluteString)
 
-        let didl = "&lt;DIDL-Lite xmlns=\"urn:schemas-upnp-org:metadata-1-0/DIDL-Lite/\" xmlns:dc=\"http://purl.org/dc/elements/1.1/\" xmlns:upnp=\"urn:schemas-upnp-org:metadata-1-0/upnp/\" xmlns:dlna=\"urn:schemas-dlna-org:metadata-1-0/\"&gt;&lt;item id=\"0\" parentID=\"-1\" restricted=\"1\"&gt;&lt;dc:title&gt;\(escapedTitle)&lt;/dc:title&gt;&lt;upnp:class&gt;object.item.videoItem.movie&lt;/upnp:class&gt;&lt;res protocolInfo=\"\(dlnaProtocolInfo)\"&gt;\(escapedURL)&lt;/res&gt;&lt;/item&gt;&lt;/DIDL-Lite&gt;"
+        var subtitleTags = ""
+        if let subURL = subtitleURL {
+            let escapedSub = escapeXML(subURL.absoluteString)
+            subtitleTags = "&lt;sec:CaptionInfo sec:type=\"srt\"&gt;\(escapedSub)&lt;/sec:CaptionInfo&gt;&lt;sec:CaptionInfoEx sec:type=\"srt\"&gt;\(escapedSub)&lt;/sec:CaptionInfoEx&gt;&lt;res protocolInfo=\"http-get:*:text/srt:*\"&gt;\(escapedSub)&lt;/res&gt;&lt;res protocolInfo=\"http-get:*:smi/caption:*\"&gt;\(escapedSub)&lt;/res&gt;"
+        }
+
+        let didl = "&lt;DIDL-Lite xmlns=\"urn:schemas-upnp-org:metadata-1-0/DIDL-Lite/\" xmlns:dc=\"http://purl.org/dc/elements/1.1/\" xmlns:upnp=\"urn:schemas-upnp-org:metadata-1-0/upnp/\" xmlns:dlna=\"urn:schemas-dlna-org:metadata-1-0/\" xmlns:sec=\"http://www.sec.co.kr/\"&gt;&lt;item id=\"0\" parentID=\"-1\" restricted=\"1\"&gt;&lt;dc:title&gt;\(escapedTitle)&lt;/dc:title&gt;&lt;upnp:class&gt;object.item.videoItem.movie&lt;/upnp:class&gt;&lt;res protocolInfo=\"\(dlnaProtocolInfo)\"&gt;\(escapedURL)&lt;/res&gt;\(subtitleTags)&lt;/item&gt;&lt;/DIDL-Lite&gt;"
 
         let action = "SetAVTransportURI"
         let body = """
@@ -25,6 +31,19 @@ public final class DLNAController: Sendable {
         """
 
         _ = try await sendSOAP(to: device.avTransportControlURL, serviceType: "urn:schemas-upnp-org:service:AVTransport:1", action: action, body: body)
+    }
+
+    // MARK: - Set Subtitle Display (Optional UPnP RenderingControl)
+    public func setSubtitleDisplay(device: DLNADevice, enabled: Bool) async {
+        guard let rcURL = device.renderingControlURL else { return }
+        let action = "X_SetSubtitle"
+        let body = """
+        <u:X_SetSubtitle xmlns:u="urn:schemas-upnp-org:service:RenderingControl:1">
+          <InstanceID>0</InstanceID>
+          <DesiredSubtitle>\(enabled ? "ON" : "OFF")</DesiredSubtitle>
+        </u:X_SetSubtitle>
+        """
+        _ = try? await sendSOAP(to: rcURL, serviceType: "urn:schemas-upnp-org:service:RenderingControl:1", action: action, body: body)
     }
 
     // MARK: - Play

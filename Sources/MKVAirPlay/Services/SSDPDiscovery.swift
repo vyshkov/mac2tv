@@ -37,18 +37,29 @@ public final class SSDPDiscovery: NSObject, ObservableObject, @unchecked Sendabl
     }
 
     public func refresh() {
+        DispatchQueue.main.async { [weak self] in
+            self?.isSearching = true
+        }
         discoveryQueue.async { [weak self] in
             self?.performSSDPSearch()
         }
     }
 
     public func stopDiscovery() {
-        isSearching = false
+        DispatchQueue.main.async { [weak self] in
+            self?.isSearching = false
+        }
         searchTimer?.invalidate()
         searchTimer = nil
     }
 
     private func performSSDPSearch() {
+        defer {
+            DispatchQueue.main.async { [weak self] in
+                self?.isSearching = false
+            }
+        }
+
         guard let localIP = NetworkHelper.getLocalIPAddress() else {
             NSLog("[SSDPDiscovery] No local IP found")
             return
@@ -62,7 +73,7 @@ public final class SSDPDiscovery: NSObject, ObservableObject, @unchecked Sendabl
         inet_aton(localIP, &inAddr)
         setsockopt(sock, IPPROTO_IP, IP_MULTICAST_IF, &inAddr, socklen_t(MemoryLayout<in_addr>.size))
 
-        var tv = timeval(tv_sec: 2, tv_usec: 500000) // 2.5s timeout
+        var tv = timeval(tv_sec: 2, tv_usec: 0) // 2.0s search window
         setsockopt(sock, SOL_SOCKET, SO_RCVTIMEO, &tv, socklen_t(MemoryLayout<timeval>.size))
 
         var destAddr = sockaddr_in()
@@ -90,13 +101,17 @@ public final class SSDPDiscovery: NSObject, ObservableObject, @unchecked Sendabl
         var fromAddr = sockaddr_in()
         var fromLen = socklen_t(MemoryLayout<sockaddr_in>.size)
 
-        while isSearching {
+        var keepListening = true
+        while keepListening {
             let r = withUnsafeMutablePointer(to: &fromAddr) {
                 $0.withMemoryRebound(to: sockaddr.self, capacity: 1) {
                     recvfrom(sock, &buf, 8192, 0, $0, &fromLen)
                 }
             }
-            if r <= 0 { break }
+            if r <= 0 {
+                keepListening = false
+                break
+            }
 
             guard let resp = String(bytes: buf[0..<r], encoding: .utf8) else { continue }
             for line in resp.components(separatedBy: "\r\n") {

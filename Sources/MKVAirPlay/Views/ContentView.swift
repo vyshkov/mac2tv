@@ -41,6 +41,9 @@ public struct ContentView: View {
             // Drop Zone / File Picker
             DropZoneView(viewModel: viewModel)
 
+            // Subtitle Settings (Embedded & External)
+            SubtitlePickerView(viewModel: viewModel)
+
             // Playback Controls / Stream Action
             PlaybackControlsView(viewModel: viewModel)
 

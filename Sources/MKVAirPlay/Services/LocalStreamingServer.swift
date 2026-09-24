@@ -12,7 +12,18 @@ public final class LocalStreamingServer: @unchecked Sendable {
 
     public private(set) var currentURL: URL?
     public private(set) var activeFilePath: String?
+    public private(set) var activeSubtitlePath: String?
     public private(set) var activePort: UInt16 = 0
+
+    public var currentSubtitleURL: URL? {
+        guard activeSubtitlePath != nil, let localIP = NetworkHelper.getLocalIPAddress(), activePort > 0 else { return nil }
+        return URL(string: "http://\(localIP):\(activePort)/subtitles.srt")
+    }
+
+    public func setSubtitleFile(path: String?) {
+        self.activeSubtitlePath = path
+        NSLog("[LocalStreamingServer] Active subtitle set to: %@", path ?? "None")
+    }
 
     private init() {}
 
@@ -111,6 +122,7 @@ public final class LocalStreamingServer: @unchecked Sendable {
 
         currentURL = nil
         activeFilePath = nil
+        activeSubtitlePath = nil
         activePort = 0
     }
 
@@ -154,14 +166,6 @@ public final class LocalStreamingServer: @unchecked Sendable {
             close(clientSock)
         }
 
-        guard let filePath = activeFilePath,
-              let fileAttrs = try? FileManager.default.attributesOfItem(atPath: filePath),
-              let fileSize = fileAttrs[.size] as? Int64 else {
-            let notFound = "HTTP/1.1 404 Not Found\r\nContent-Length: 0\r\nConnection: close\r\n\r\n"
-            _ = notFound.withCString { write(clientSock, $0, strlen($0)) }
-            return
-        }
-
         var headerBuffer = [UInt8](repeating: 0, count: 4096)
         let bytesRead = read(clientSock, &headerBuffer, 4096)
         guard bytesRead > 0 else { return }
@@ -171,6 +175,38 @@ public final class LocalStreamingServer: @unchecked Sendable {
         guard let requestLine = lines.first else { return }
 
         let isHead = requestLine.uppercased().starts(with: "HEAD")
+
+        // Handle Subtitle requests (e.g. GET /subtitles.srt)
+        if requestLine.contains("subtitles") {
+            if let subPath = activeSubtitlePath,
+               let subData = try? Data(contentsOf: URL(fileURLWithPath: subPath)) {
+                let subHeaders = "HTTP/1.1 200 OK\r\n" +
+                                 "Server: MKVAirPlay/1.0\r\n" +
+                                 "Content-Type: text/srt; charset=utf-8\r\n" +
+                                 "Accept-Ranges: bytes\r\n" +
+                                 "Content-Length: \(subData.count)\r\n" +
+                                 "Connection: close\r\n\r\n"
+                _ = subHeaders.withCString { write(clientSock, $0, strlen($0)) }
+                if !isHead {
+                    _ = subData.withUnsafeBytes { ptr in
+                        write(clientSock, ptr.baseAddress!, subData.count)
+                    }
+                }
+            } else {
+                let notFound = "HTTP/1.1 404 Not Found\r\nContent-Length: 0\r\nConnection: close\r\n\r\n"
+                _ = notFound.withCString { write(clientSock, $0, strlen($0)) }
+            }
+            return
+        }
+
+        guard let filePath = activeFilePath,
+              let fileAttrs = try? FileManager.default.attributesOfItem(atPath: filePath),
+              let fileSize = fileAttrs[.size] as? Int64 else {
+            let notFound = "HTTP/1.1 404 Not Found\r\nContent-Length: 0\r\nConnection: close\r\n\r\n"
+            _ = notFound.withCString { write(clientSock, $0, strlen($0)) }
+            return
+        }
+
         let ext = URL(fileURLWithPath: filePath).pathExtension
         let contentType = NetworkHelper.mimeType(for: ext)
 

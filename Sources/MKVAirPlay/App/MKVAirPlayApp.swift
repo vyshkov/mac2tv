@@ -11,7 +11,7 @@ struct MKVAirPlayApp: App {
         }
         .windowStyle(.titleBar)
         .windowToolbarStyle(.unifiedCompact)
-        .defaultSize(width: 520, height: 500)
+        .defaultSize(width: 520, height: 560)
     }
 }
 

@@ -22,6 +22,9 @@ public final class PlaybackViewModel: ObservableObject {
     @Published public var isUserScrubbing: Bool = false
     @Published public var scrubPosition: Double = 0
 
+    @Published public var availableSubtitles: [SubtitleTrack] = [SubtitleTrack.off]
+    @Published public var selectedSubtitle: SubtitleTrack = SubtitleTrack.off
+
     @Published public var isDropTargeted: Bool = false
     @Published public var showingManualIPSheet: Bool = false
     @Published public var manualIPText: String = ""
@@ -51,6 +54,7 @@ public final class PlaybackViewModel: ObservableObject {
                 self.discoveredDevices = devices
                 if self.selectedDevice == nil, let first = devices.first {
                     self.selectedDevice = first
+                    self.isSearchingDevices = false
                 }
             }
             .store(in: &cancellables)
@@ -93,6 +97,73 @@ public final class PlaybackViewModel: ObservableObject {
 
         errorMessage = nil
         statusMessage = "Ready to stream \"\(selectedFileName)\""
+
+        // Reset and probe for subtitles (embedded & external)
+        availableSubtitles = [SubtitleTrack.off]
+        selectedSubtitle = SubtitleTrack.off
+
+        Task {
+            let tracks = await SubtitleHelper.probeSubtitleTracks(for: url)
+            self.availableSubtitles = tracks
+            // Default to first subtitle if available, or keep Off
+            if let firstTrack = tracks.first(where: { !$0.isOff }) {
+                NSLog("[PlaybackViewModel] Found subtitle: %@", firstTrack.displayName)
+            }
+        }
+    }
+
+    // MARK: - Subtitles Management
+    public func selectSubtitle(_ track: SubtitleTrack) {
+        selectedSubtitle = track
+        guard let fileURL = selectedFileURL else { return }
+
+        Task {
+            do {
+                let subFileURL = try? await SubtitleHelper.prepareSubtitleFile(track: track, for: fileURL)
+                server.setSubtitleFile(path: subFileURL?.path)
+
+                if isStreaming, let device = selectedDevice, let streamURL = server.currentURL {
+                    let subStreamURL = track.isOff ? nil : server.currentSubtitleURL
+                    let resumeTime = currentTime
+                    statusMessage = "Updating subtitles to \(track.displayName)..."
+
+                    try await dlna.setAVTransportURI(
+                        device: device,
+                        mediaURL: streamURL,
+                        title: fileURL.deletingPathExtension().lastPathComponent,
+                        subtitleURL: subStreamURL
+                    )
+
+                    await dlna.setSubtitleDisplay(device: device, enabled: !track.isOff)
+
+                    try await Task.sleep(nanoseconds: 300_000_000)
+                    try await dlna.play(device: device)
+
+                    if resumeTime > 2 {
+                        try await Task.sleep(nanoseconds: 400_000_000)
+                        try await dlna.seek(device: device, toSeconds: resumeTime)
+                    }
+
+                    statusMessage = "Subtitles: \(track.displayName)"
+                }
+            } catch {
+                errorMessage = "Failed to update subtitles: \(error.localizedDescription)"
+            }
+        }
+    }
+
+    public func loadExternalSubtitleFile(url: URL) {
+        let track = SubtitleTrack(
+            id: "manual_\(url.path)",
+            title: url.lastPathComponent,
+            language: url.pathExtension.uppercased(),
+            streamIndex: nil,
+            externalURL: url
+        )
+        if !availableSubtitles.contains(where: { $0.id == track.id }) {
+            availableSubtitles.append(track)
+        }
+        selectSubtitle(track)
     }
 
     // MARK: - Streaming
@@ -112,19 +183,30 @@ public final class PlaybackViewModel: ObservableObject {
 
         Task {
             do {
-                // 1. Start local byte-range HTTP server
+                // 1. Prepare subtitle file if selected
+                let subFileURL = try? await SubtitleHelper.prepareSubtitleFile(track: selectedSubtitle, for: fileURL)
+                server.setSubtitleFile(path: subFileURL?.path)
+
+                // 2. Start local byte-range HTTP server
                 let streamURL = try server.start(filePath: fileURL.path)
                 activeStreamURL = streamURL.absoluteString
 
-                // 2. Instruct TV to load media URI
+                // 3. Instruct TV to load media URI + Subtitles
                 statusMessage = "Connecting to \(device.displayName)..."
-                try await dlna.setAVTransportURI(device: device, mediaURL: streamURL, title: fileURL.deletingPathExtension().lastPathComponent)
+                let subStreamURL = selectedSubtitle.isOff ? nil : server.currentSubtitleURL
+                try await dlna.setAVTransportURI(
+                    device: device,
+                    mediaURL: streamURL,
+                    title: fileURL.deletingPathExtension().lastPathComponent,
+                    subtitleURL: subStreamURL
+                )
 
                 // Small delay to allow TV to buffer initial header
                 try await Task.sleep(nanoseconds: 500_000_000)
 
-                // 3. Command TV to play
+                // 4. Command TV to play
                 try await dlna.play(device: device)
+                await dlna.setSubtitleDisplay(device: device, enabled: !selectedSubtitle.isOff)
 
                 isStreaming = true
                 playbackState = .playing
