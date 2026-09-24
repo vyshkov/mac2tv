@@ -1,0 +1,8 @@
+.build/
+Packages/
+*.xcodeproj
+*.xcworkspace
+.DS_Store
+*.swp
+MKVAirPlay.app/
+DerivedData/
