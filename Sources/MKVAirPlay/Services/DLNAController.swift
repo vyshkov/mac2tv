@@ -7,6 +7,10 @@ public final class DLNAController: Sendable {
 
     // MARK: - Set AV Transport URI
     public func setAVTransportURI(device: DLNADevice, mediaURL: URL, title: String, subtitleURL: URL? = nil) async throws {
+        // Step 1: Ensure any previous playback is stopped so the TV transitions cleanly
+        try? await stop(device: device)
+        try? await Task.sleep(nanoseconds: 300_000_000)
+
         let ext = mediaURL.pathExtension
         let mime = NetworkHelper.mimeType(for: ext)
         let dlnaProtocolInfo = "http-get:*:\(mime):*;DLNA.ORG_OP=01;DLNA.ORG_CI=0;DLNA.ORG_FLAGS=01700000000000000000000000000000"
@@ -55,7 +59,25 @@ public final class DLNAController: Sendable {
           <Speed>1</Speed>
         </u:Play>
         """
-        _ = try await sendSOAP(to: device.avTransportControlURL, serviceType: "urn:schemas-upnp-org:service:AVTransport:1", action: action, body: body)
+
+        var lastError: Error?
+        for attempt in 1...6 {
+            do {
+                _ = try await sendSOAP(to: device.avTransportControlURL, serviceType: "urn:schemas-upnp-org:service:AVTransport:1", action: action, body: body)
+                return
+            } catch {
+                lastError = error
+                let desc = error.localizedDescription
+                if attempt < 6 && (desc.contains("Transition not available") || desc.contains("701")) {
+                    try? await Task.sleep(nanoseconds: 500_000_000)
+                } else {
+                    throw error
+                }
+            }
+        }
+        if let err = lastError {
+            throw err
+        }
     }
 
     // MARK: - Pause
