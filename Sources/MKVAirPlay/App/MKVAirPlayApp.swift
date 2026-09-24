@@ -11,7 +11,7 @@ struct MKVAirPlayApp: App {
         }
         .windowStyle(.titleBar)
         .windowToolbarStyle(.unifiedCompact)
-        .defaultSize(width: 520, height: 560)
+        .defaultSize(width: 520, height: 620)
     }
 }
 
@@ -26,6 +26,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func applicationWillTerminate(_ notification: Notification) {
+        SleepManager.shared.disableSleepPrevention()
         LocalStreamingServer.shared.stop()
     }
 }

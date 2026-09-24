@@ -25,6 +25,13 @@ public final class PlaybackViewModel: ObservableObject {
     @Published public var availableSubtitles: [SubtitleTrack] = [SubtitleTrack.off]
     @Published public var selectedSubtitle: SubtitleTrack = SubtitleTrack.off
 
+    @Published public var preventSleepOnLidClose: Bool = (UserDefaults.standard.object(forKey: "preventSleepOnLidClose") as? Bool) ?? true {
+        didSet {
+            UserDefaults.standard.set(preventSleepOnLidClose, forKey: "preventSleepOnLidClose")
+            updateSleepPrevention()
+        }
+    }
+
     @Published public var isDropTargeted: Bool = false
     @Published public var showingManualIPSheet: Bool = false
     @Published public var manualIPText: String = ""
@@ -212,6 +219,7 @@ public final class PlaybackViewModel: ObservableObject {
                 playbackState = .playing
                 statusMessage = "Streaming to \(device.displayName)"
 
+                updateSleepPrevention()
                 startPolling(device: device)
             } catch {
                 server.stop()
@@ -219,6 +227,7 @@ public final class PlaybackViewModel: ObservableObject {
                 playbackState = .error(error.localizedDescription)
                 errorMessage = "Streaming error: \(error.localizedDescription)"
                 statusMessage = "Streaming failed"
+                updateSleepPrevention()
             }
         }
     }
@@ -237,6 +246,7 @@ public final class PlaybackViewModel: ObservableObject {
                     playbackState = .playing
                     statusMessage = "Playing on \(device.displayName)"
                 }
+                updateSleepPrevention()
             } catch {
                 errorMessage = "Playback command failed: \(error.localizedDescription)"
             }
@@ -263,6 +273,15 @@ public final class PlaybackViewModel: ObservableObject {
         currentTime = 0
         activeStreamURL = nil
         statusMessage = selectedFileURL != nil ? "Ready to stream" : "Select a video file to begin"
+        updateSleepPrevention()
+    }
+
+    public func updateSleepPrevention() {
+        if isStreaming && playbackState == .playing && preventSleepOnLidClose {
+            SleepManager.shared.enableSleepPrevention()
+        } else {
+            SleepManager.shared.disableSleepPrevention()
+        }
     }
 
     // MARK: - Seeking

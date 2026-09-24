@@ -44,6 +44,9 @@ public struct ContentView: View {
             // Subtitle Settings (Embedded & External)
             SubtitlePickerView(viewModel: viewModel)
 
+            // Sleep Prevention Settings
+            SleepToggleView(viewModel: viewModel)
+
             // Playback Controls / Stream Action
             PlaybackControlsView(viewModel: viewModel)
 
@@ -102,6 +105,6 @@ public struct ContentView: View {
             }
         }
         .padding(20)
-        .frame(minWidth: 480, idealWidth: 520, maxWidth: 640, minHeight: 460, idealHeight: 520)
+        .frame(minWidth: 480, idealWidth: 520, maxWidth: 640, minHeight: 520, idealHeight: 600)
     }
 }

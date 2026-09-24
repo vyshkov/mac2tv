@@ -25,6 +25,7 @@ Standard Apple AirPlay video streaming requires video files to be in Apple-appro
 - 🎯 **Drag & Drop Simplicity**: Drop any `.mkv`, `.mp4`, `.mov`, `.avi`, `.webm`, or `.m4v` file onto the window.
 - 📺 **Zero-Config Auto-Discovery**: Automatically discovers your Smart TV on the local Wi-Fi/Ethernet network via SSDP multicast.
 - 💬 **Subtitle Settings & Switching**: Auto-detects embedded MKV subtitle tracks and external companion `.srt`/`.vtt` files. Turn subtitles off or switch languages on the fly!
+- ☕ **Clamshell Streaming (Prevent Sleep)**: Toggle to prevent your Mac from sleeping while streaming. Close your MacBook lid to turn off the screen while video continues streaming to your TV uninterrupted!
 - 🕹️ **Interactive Timeline Scrubber**: Seek to any timestamp (`HH:MM:SS`) with live progress and duration indicators.
 - ⏩ **Quick Skips**: Skip backward/forward by 10 seconds or 1 minute.
 - 📡 **Network Diagnostics**: Shows streaming endpoints, active bitrate/range requests, and device endpoints.
