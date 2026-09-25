@@ -6,82 +6,131 @@ public struct ContentView: View {
     public init() {}
 
     public var body: some View {
-        ScrollView(.vertical, showsIndicators: false) {
-            VStack(spacing: 16) {
-                // Header
-                HStack(spacing: 12) {
-                    ZStack {
-                        RoundedRectangle(cornerRadius: 10, style: .continuous)
-                            .fill(LinearGradient(
-                                colors: [Color.cyan, Color.indigo],
-                                startPoint: .topLeading,
-                                endPoint: .bottomTrailing
-                            ))
-                            .frame(width: 36, height: 36)
+        ZStack {
+            // 1. Native macOS Translucent Blur (behind-window vibrancy)
+            VisualEffectView(material: .sidebar, blendingMode: .behindWindow, state: .active)
+                .ignoresSafeArea()
 
-                        Image(systemName: "tv.and.mediabox")
-                            .font(.system(size: 18))
-                            .foregroundColor(.white)
-                    }
+            // 2. Refractive Ambient Color Bleed (Liquid Glass chromatic depth)
+            GeometryReader { proxy in
+                ZStack {
+                    Circle()
+                        .fill(Color(red: 0.1, green: 0.5, blue: 1.0).opacity(0.12))
+                        .frame(width: 320, height: 320)
+                        .blur(radius: 80)
+                        .offset(x: -proxy.size.width * 0.25, y: -proxy.size.height * 0.25)
 
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text("MKVAirPlay")
-                            .font(.system(size: 16, weight: .bold))
-
-                        Text("Stream MKV to Smart TV via DLNA")
-                            .font(.system(size: 11))
-                            .foregroundColor(.secondary)
-                    }
-
-                    Spacer()
+                    Circle()
+                        .fill(Color(red: 0.5, green: 0.2, blue: 0.9).opacity(0.10))
+                        .frame(width: 280, height: 280)
+                        .blur(radius: 70)
+                        .offset(x: proxy.size.width * 0.3, y: proxy.size.height * 0.2)
                 }
+            }
+            .ignoresSafeArea()
 
-                // Target TV Selector
-                DevicePickerView(viewModel: viewModel)
+            // 3. Main Glass Content
+            ScrollView(.vertical, showsIndicators: false) {
+                VStack(spacing: 14) {
+                    // Top Space for macOS Window Traffic Light Controls
+                    Color.clear
+                        .frame(height: 12)
 
-                // Drop Zone / File Picker
-                DropZoneView(viewModel: viewModel)
+                    // Liquid Glass Header
+                    HStack(spacing: 12) {
+                        ZStack {
+                            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                                .fill(LinearGradient(
+                                    colors: [Color.cyan, Color.blue, Color.indigo],
+                                    startPoint: .topLeading,
+                                    endPoint: .bottomTrailing
+                                ))
+                                .frame(width: 40, height: 40)
+                                .overlay(
+                                    RoundedRectangle(cornerRadius: 12, style: .continuous)
+                                        .strokeBorder(
+                                            LinearGradient(
+                                                colors: [.white.opacity(0.7), .white.opacity(0.2)],
+                                                startPoint: .topLeading,
+                                                endPoint: .bottomTrailing
+                                            ),
+                                            lineWidth: 1
+                                        )
+                                )
+                                .shadow(color: Color.blue.opacity(0.35), radius: 8, x: 0, y: 3)
 
-                // Subtitle Settings (Embedded & External)
-                SubtitlePickerView(viewModel: viewModel)
-
-                // Sleep Prevention Settings
-                SleepToggleView(viewModel: viewModel)
-
-                // Playback Controls / Stream Action
-                PlaybackControlsView(viewModel: viewModel)
-
-                // Error Banner (if present)
-                if let error = viewModel.errorMessage {
-                    HStack(spacing: 8) {
-                        Image(systemName: "exclamationmark.triangle.fill")
-                            .foregroundColor(.red)
-                        Text(error)
-                            .font(.caption)
-                            .foregroundColor(.red)
-                            .lineLimit(2)
-                        Spacer()
-                        Button("Dismiss") {
-                            viewModel.errorMessage = nil
+                            Image(systemName: "tv.and.mediabox")
+                                .font(.system(size: 20, weight: .semibold))
+                                .foregroundColor(.white)
                         }
-                        .font(.caption2)
-                        .buttonStyle(.plain)
-                        .foregroundColor(.secondary)
+
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("MKVAirPlay")
+                                .font(.system(size: 17, weight: .bold, design: .rounded))
+
+                            Text("Stream MKV to Smart TV via DLNA & AirPlay")
+                                .font(.system(size: 11))
+                                .foregroundColor(.secondary)
+                        }
+
+                        Spacer()
+
+                        // Status Pill Badge
+                        LiquidGlassPill(
+                            viewModel.isStreaming ? "Streaming" : (viewModel.selectedDevice != nil ? "Ready" : "Searching"),
+                            systemImage: viewModel.isStreaming ? "dot.radiowaves.left.and.right" : (viewModel.selectedDevice != nil ? "checkmark.circle.fill" : "antenna.radiowaves.left.and.right"),
+                            tint: viewModel.isStreaming ? .green : (viewModel.selectedDevice != nil ? .cyan : .orange)
+                        )
                     }
-                    .padding(10)
-                    .background(RoundedRectangle(cornerRadius: 8).fill(Color.red.opacity(0.1)))
-                }
+                    .padding(.horizontal, 4)
+                    .padding(.bottom, 2)
 
-                // Footer Info & Remote Hint
-                VStack(spacing: 6) {
-                    Divider()
+                    // Target TV Selector
+                    DevicePickerView(viewModel: viewModel)
 
+                    // Drop Zone / File Picker
+                    DropZoneView(viewModel: viewModel)
+
+                    // Subtitle Settings (Embedded & External)
+                    SubtitlePickerView(viewModel: viewModel)
+
+                    // Sleep Prevention Settings
+                    SleepToggleView(viewModel: viewModel)
+
+                    // Playback Controls / Stream Action
+                    PlaybackControlsView(viewModel: viewModel)
+
+                    // Error Banner (Liquid Red Glass)
+                    if let error = viewModel.errorMessage {
+                        HStack(spacing: 10) {
+                            Image(systemName: "exclamationmark.triangle.fill")
+                                .font(.system(size: 14, weight: .bold))
+                                .foregroundColor(.red)
+
+                            Text(error)
+                                .font(.system(size: 12, weight: .medium))
+                                .foregroundColor(.red)
+                                .lineLimit(2)
+
+                            Spacer()
+
+                            Button("Dismiss") {
+                                viewModel.errorMessage = nil
+                            }
+                            .font(.system(size: 11, weight: .semibold))
+                            .buttonStyle(.plain)
+                            .foregroundColor(.secondary)
+                        }
+                        .liquidGlassCard(cornerRadius: 14, padding: 12, glow: .red)
+                    }
+
+                    // Footer Info & Remote Hint (Liquid Glass Bar)
                     HStack {
                         HStack(spacing: 6) {
                             Image(systemName: "remote.fill")
                                 .font(.system(size: 11))
                             Text("TV Magic Remote supported natively")
-                                .font(.system(size: 11))
+                                .font(.system(size: 11, weight: .medium, design: .rounded))
                         }
                         .foregroundColor(.secondary)
 
@@ -100,10 +149,12 @@ public struct ContentView: View {
                                 .lineLimit(1)
                         }
                     }
+                    .padding(.horizontal, 6)
                     .padding(.top, 4)
                 }
+                .padding(.horizontal, 20)
+                .padding(.bottom, 20)
             }
-            .padding(20)
         }
         .frame(minWidth: 500, idealWidth: 540, maxWidth: 650, minHeight: 680, idealHeight: 740)
     }

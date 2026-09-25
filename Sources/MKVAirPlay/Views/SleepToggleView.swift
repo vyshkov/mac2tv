@@ -8,19 +8,44 @@ public struct SleepToggleView: View {
     }
 
     public var body: some View {
-        HStack(spacing: 12) {
-            HStack(spacing: 8) {
-                Image(systemName: viewModel.preventSleepOnLidClose ? "powersleep" : "moon.zzz")
-                    .font(.system(size: 15))
-                    .foregroundColor(viewModel.preventSleepOnLidClose ? .accentColor : .secondary)
+        HStack(spacing: 14) {
+            HStack(spacing: 12) {
+                ZStack {
+                    RoundedRectangle(cornerRadius: 10, style: .continuous)
+                        .fill(viewModel.preventSleepOnLidClose ? Color.indigo.opacity(0.15) : Color.primary.opacity(0.05))
+                        .frame(width: 38, height: 38)
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                                .strokeBorder(
+                                    LinearGradient(
+                                        colors: viewModel.preventSleepOnLidClose ?
+                                            [Color.indigo.opacity(0.55), Color.purple.opacity(0.2)] :
+                                            [.white.opacity(0.35), .white.opacity(0.08)],
+                                        startPoint: .topLeading,
+                                        endPoint: .bottomTrailing
+                                    ),
+                                    lineWidth: 0.8
+                                )
+                        )
+
+                    Image(systemName: viewModel.preventSleepOnLidClose ? "powersleep" : "moon.zzz")
+                        .font(.system(size: 17))
+                        .foregroundColor(viewModel.preventSleepOnLidClose ? .indigo : .secondary)
+                }
 
                 VStack(alignment: .leading, spacing: 2) {
-                    Text("Keep streaming when lid is closed")
-                        .font(.system(size: 13, weight: .medium))
-                        .foregroundColor(.primary)
+                    HStack(spacing: 6) {
+                        Text("Keep streaming when lid is closed")
+                            .font(.system(size: 13, weight: .medium, design: .rounded))
+                            .foregroundColor(.primary)
+
+                        if viewModel.preventSleepOnLidClose {
+                            LiquidGlassPill("Active", tint: .indigo)
+                        }
+                    }
 
                     Text("Prevents sleep while allowing the display to turn off")
-                        .font(.caption2)
+                        .font(.system(size: 11))
                         .foregroundColor(.secondary)
                 }
             }
@@ -31,15 +56,6 @@ public struct SleepToggleView: View {
                 .toggleStyle(.switch)
                 .labelsHidden()
         }
-        .padding(.horizontal, 14)
-        .padding(.vertical, 10)
-        .background(
-            RoundedRectangle(cornerRadius: 12, style: .continuous)
-                .fill(Color(NSColor.controlBackgroundColor))
-        )
-        .overlay(
-            RoundedRectangle(cornerRadius: 12, style: .continuous)
-                .stroke(Color.primary.opacity(0.08), lineWidth: 1)
-        )
+        .liquidGlassCard(cornerRadius: 16, padding: 12)
     }
 }

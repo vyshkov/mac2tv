@@ -9,16 +9,36 @@ public struct SubtitlePickerView: View {
     }
 
     public var body: some View {
-        HStack(spacing: 12) {
-            HStack(spacing: 8) {
-                Image(systemName: viewModel.selectedSubtitle.isOff ? "captions.bubble" : "captions.bubble.fill")
-                    .font(.system(size: 16))
-                    .foregroundColor(viewModel.selectedSubtitle.isOff ? .secondary : .accentColor)
+        HStack(spacing: 14) {
+            HStack(spacing: 12) {
+                ZStack {
+                    RoundedRectangle(cornerRadius: 10, style: .continuous)
+                        .fill(viewModel.selectedSubtitle.isOff ? Color.primary.opacity(0.05) : Color.cyan.opacity(0.12))
+                        .frame(width: 38, height: 38)
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                                .strokeBorder(
+                                    LinearGradient(
+                                        colors: viewModel.selectedSubtitle.isOff ?
+                                            [.white.opacity(0.35), .white.opacity(0.08)] :
+                                            [Color.cyan.opacity(0.5), Color.cyan.opacity(0.15)],
+                                        startPoint: .topLeading,
+                                        endPoint: .bottomTrailing
+                                    ),
+                                    lineWidth: 0.8
+                                )
+                        )
 
-                VStack(alignment: .leading, spacing: 2) {
+                    Image(systemName: viewModel.selectedSubtitle.isOff ? "captions.bubble" : "captions.bubble.fill")
+                        .font(.system(size: 17))
+                        .foregroundColor(viewModel.selectedSubtitle.isOff ? .secondary : .cyan)
+                }
+
+                VStack(alignment: .leading, spacing: 3) {
                     Text("Subtitles")
-                        .font(.caption2)
+                        .font(.system(size: 10, weight: .bold, design: .rounded))
                         .foregroundColor(.secondary)
+                        .tracking(0.5)
                         .textCase(.uppercase)
 
                     Menu {
@@ -43,12 +63,12 @@ public struct SubtitlePickerView: View {
                     } label: {
                         HStack(spacing: 6) {
                             Text(viewModel.selectedSubtitle.displayName)
-                                .font(.system(size: 13, weight: .medium))
-                                .foregroundColor(viewModel.selectedSubtitle.isOff ? .primary : .accentColor)
+                                .font(.system(size: 13, weight: .medium, design: .rounded))
+                                .foregroundColor(viewModel.selectedSubtitle.isOff ? .primary : .cyan)
                                 .lineLimit(1)
 
                             Image(systemName: "chevron.up.chevron.down")
-                                .font(.system(size: 10))
+                                .font(.system(size: 10, weight: .semibold))
                                 .foregroundColor(.secondary)
                         }
                     }
@@ -61,25 +81,10 @@ public struct SubtitlePickerView: View {
             Spacer()
 
             if !viewModel.selectedSubtitle.isOff {
-                Text("Active")
-                    .font(.caption2.bold())
-                    .padding(.horizontal, 6)
-                    .padding(.vertical, 2)
-                    .background(Color.accentColor.opacity(0.15))
-                    .foregroundColor(.accentColor)
-                    .cornerRadius(4)
+                LiquidGlassPill("Active", systemImage: "checkmark", tint: .cyan)
             }
         }
-        .padding(.horizontal, 14)
-        .padding(.vertical, 10)
-        .background(
-            RoundedRectangle(cornerRadius: 12, style: .continuous)
-                .fill(Color(NSColor.controlBackgroundColor))
-        )
-        .overlay(
-            RoundedRectangle(cornerRadius: 12, style: .continuous)
-                .stroke(Color.primary.opacity(0.08), lineWidth: 1)
-        )
+        .liquidGlassCard(cornerRadius: 16, padding: 12)
     }
 
     private func openSubtitleFilePicker() {
