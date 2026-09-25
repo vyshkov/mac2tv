@@ -11,7 +11,8 @@ struct MKVAirPlayApp: App {
         }
         .windowStyle(.titleBar)
         .windowToolbarStyle(.unifiedCompact)
-        .defaultSize(width: 520, height: 620)
+        .windowResizability(.contentMinSize)
+        .defaultSize(width: 540, height: 720)
     }
 }
 
@@ -19,6 +20,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.regular)
         NSApp.activate(ignoringOtherApps: true)
+
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+            for window in NSApp.windows {
+                window.minSize = NSSize(width: 500, height: 680)
+                let frame = window.frame
+                if frame.size.height < 680 || frame.size.width < 500 {
+                    let newWidth = max(540, frame.size.width)
+                    let newHeight = max(720, frame.size.height)
+                    var newFrame = frame
+                    newFrame.origin.y -= (newHeight - frame.size.height)
+                    newFrame.size = NSSize(width: newWidth, height: newHeight)
+                    window.setFrame(newFrame, display: true, animate: true)
+                }
+            }
+        }
     }
 
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {

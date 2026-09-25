@@ -56,21 +56,8 @@ public struct PlaybackControlsView: View {
                     }
 
                     // Scrubber Bar
-                    VStack(spacing: 4) {
-                        CustomScrubber(
-                            value: viewModel.isUserScrubbing ? $viewModel.scrubPosition : Binding(
-                                get: { viewModel.currentTime },
-                                set: { _ in }
-                            ),
-                            inRange: 0...(viewModel.duration > 0 ? viewModel.duration : 1),
-                            onEditingChanged: { editing in
-                                if editing {
-                                    viewModel.onScrubbingBegan()
-                                } else {
-                                    viewModel.onScrubbingEnded()
-                                }
-                            }
-                        )
+                    VStack(spacing: 6) {
+                        TimelineScrubber(viewModel: viewModel)
 
                         HStack {
                             Text(TimeHelper.format(seconds: viewModel.isUserScrubbing ? viewModel.scrubPosition : viewModel.currentTime))
@@ -178,18 +165,71 @@ public struct PlaybackControlsView: View {
     }
 }
 
-// MARK: - Custom Scrubber Slider
-struct CustomScrubber: View {
-    @Binding var value: Double
-    let inRange: ClosedRange<Double>
-    let onEditingChanged: (Bool) -> Void
+// MARK: - Interactive Timeline Scrubber (Click & Drag to Seek)
+public struct TimelineScrubber: View {
+    @ObservedObject var viewModel: PlaybackViewModel
 
-    var body: some View {
-        Slider(
-            value: $value,
-            in: inRange,
-            onEditingChanged: onEditingChanged
-        )
-        .accentColor(.accentColor)
+    private var progress: Double {
+        guard viewModel.duration > 0 else { return 0 }
+        let time = viewModel.isUserScrubbing ? viewModel.scrubPosition : viewModel.currentTime
+        return max(0, min(1, time / viewModel.duration))
+    }
+
+    public var body: some View {
+        GeometryReader { geometry in
+            let totalWidth = geometry.size.width
+            let trackHeight: CGFloat = 6
+            let thumbDiameter: CGFloat = 14
+
+            ZStack(alignment: .leading) {
+                // Background Track
+                Capsule()
+                    .fill(Color.primary.opacity(0.14))
+                    .frame(height: trackHeight)
+
+                // Progress Fill Track
+                Capsule()
+                    .fill(LinearGradient(
+                        colors: [Color.accentColor.opacity(0.85), Color.accentColor],
+                        startPoint: .leading,
+                        endPoint: .trailing
+                    ))
+                    .frame(width: max(0, min(totalWidth, totalWidth * CGFloat(progress))), height: trackHeight)
+
+                // Scrubber Thumb Handle
+                Circle()
+                    .fill(Color.white)
+                    .frame(width: thumbDiameter, height: thumbDiameter)
+                    .shadow(color: Color.black.opacity(0.25), radius: 2.5, x: 0, y: 1)
+                    .overlay(
+                        Circle().stroke(Color.accentColor, lineWidth: 2.5)
+                    )
+                    .offset(x: max(0, min(totalWidth - thumbDiameter, totalWidth * CGFloat(progress) - thumbDiameter / 2)))
+            }
+            .frame(maxHeight: .infinity)
+            .contentShape(Rectangle()) // Makes the whole 22pt high area interactive
+            .gesture(
+                DragGesture(minimumDistance: 0)
+                    .onChanged { gesture in
+                        let locationX = max(0, min(totalWidth, gesture.location.x))
+                        let pct = totalWidth > 0 ? (locationX / totalWidth) : 0
+                        let target = Double(pct) * max(1, viewModel.duration)
+
+                        if !viewModel.isUserScrubbing {
+                            viewModel.onScrubbingBegan()
+                        }
+                        viewModel.onScrubbingChanged(to: target)
+                    }
+                    .onEnded { gesture in
+                        let locationX = max(0, min(totalWidth, gesture.location.x))
+                        let pct = totalWidth > 0 ? (locationX / totalWidth) : 0
+                        let target = Double(pct) * max(1, viewModel.duration)
+
+                        viewModel.onScrubbingChanged(to: target)
+                        viewModel.onScrubbingEnded()
+                    }
+            )
+        }
+        .frame(height: 22)
     }
 }

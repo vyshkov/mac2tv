@@ -285,10 +285,14 @@ public final class PlaybackViewModel: ObservableObject {
     }
 
     // MARK: - Seeking
+    private var lastSeekTime: Date = Date.distantPast
+
     public func seek(to seconds: Double) {
         guard let device = selectedDevice, isStreaming else { return }
         let target = max(0, min(duration > 0 ? duration : seconds, seconds))
         currentTime = target
+        scrubPosition = target
+        lastSeekTime = Date()
 
         Task {
             do {
@@ -310,7 +314,7 @@ public final class PlaybackViewModel: ObservableObject {
     }
 
     public func onScrubbingChanged(to position: Double) {
-        scrubPosition = position
+        scrubPosition = max(0, min(duration > 0 ? duration : position, position))
     }
 
     public func onScrubbingEnded() {
@@ -338,7 +342,8 @@ public final class PlaybackViewModel: ObservableObject {
         do {
             let info = try await dlna.getPositionInfo(device: device)
 
-            if !isUserScrubbing {
+            let timeSinceSeek = Date().timeIntervalSince(lastSeekTime)
+            if !isUserScrubbing && timeSinceSeek > 1.2 {
                 if info.currentTime > 0 || currentTime == 0 {
                     currentTime = info.currentTime
                 }
