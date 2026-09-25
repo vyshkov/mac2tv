@@ -14,16 +14,17 @@ public final class DLNAController: Sendable {
         let ext = mediaURL.pathExtension
         let mime = NetworkHelper.mimeType(for: ext)
         let dlnaProtocolInfo = "http-get:*:\(mime):*;DLNA.ORG_OP=01;DLNA.ORG_CI=0;DLNA.ORG_FLAGS=01700000000000000000000000000000"
-        let escapedTitle = escapeXML(title)
+        let escapedTitle = escapeDIDL(title)
         let escapedURL = escapeXML(mediaURL.absoluteString)
+        let didlMediaURL = escapeDIDL(mediaURL.absoluteString)
 
         var subtitleTags = ""
         if let subURL = subtitleURL {
-            let escapedSub = escapeXML(subURL.absoluteString)
-            subtitleTags = "&lt;sec:CaptionInfo sec:type=\"srt\"&gt;\(escapedSub)&lt;/sec:CaptionInfo&gt;&lt;sec:CaptionInfoEx sec:type=\"srt\"&gt;\(escapedSub)&lt;/sec:CaptionInfoEx&gt;&lt;res protocolInfo=\"http-get:*:text/srt:*\"&gt;\(escapedSub)&lt;/res&gt;&lt;res protocolInfo=\"http-get:*:smi/caption:*\"&gt;\(escapedSub)&lt;/res&gt;"
+            let didlSubURL = escapeDIDL(subURL.absoluteString)
+            subtitleTags = "&lt;sec:CaptionInfo sec:type=\"srt\"&gt;\(didlSubURL)&lt;/sec:CaptionInfo&gt;&lt;sec:CaptionInfoEx sec:type=\"srt\"&gt;\(didlSubURL)&lt;/sec:CaptionInfoEx&gt;&lt;res protocolInfo=\"http-get:*:text/srt:*\"&gt;\(didlSubURL)&lt;/res&gt;&lt;res protocolInfo=\"http-get:*:smi/caption:*\"&gt;\(didlSubURL)&lt;/res&gt;"
         }
 
-        let didl = "&lt;DIDL-Lite xmlns=\"urn:schemas-upnp-org:metadata-1-0/DIDL-Lite/\" xmlns:dc=\"http://purl.org/dc/elements/1.1/\" xmlns:upnp=\"urn:schemas-upnp-org:metadata-1-0/upnp/\" xmlns:dlna=\"urn:schemas-dlna-org:metadata-1-0/\" xmlns:sec=\"http://www.sec.co.kr/\"&gt;&lt;item id=\"0\" parentID=\"-1\" restricted=\"1\"&gt;&lt;dc:title&gt;\(escapedTitle)&lt;/dc:title&gt;&lt;upnp:class&gt;object.item.videoItem.movie&lt;/upnp:class&gt;&lt;res protocolInfo=\"\(dlnaProtocolInfo)\"&gt;\(escapedURL)&lt;/res&gt;\(subtitleTags)&lt;/item&gt;&lt;/DIDL-Lite&gt;"
+        let didl = "&lt;DIDL-Lite xmlns=\"urn:schemas-upnp-org:metadata-1-0/DIDL-Lite/\" xmlns:dc=\"http://purl.org/dc/elements/1.1/\" xmlns:upnp=\"urn:schemas-upnp-org:metadata-1-0/upnp/\" xmlns:dlna=\"urn:schemas-dlna-org:metadata-1-0/\" xmlns:sec=\"http://www.sec.co.kr/\"&gt;&lt;item id=\"0\" parentID=\"-1\" restricted=\"1\"&gt;&lt;dc:title&gt;\(escapedTitle)&lt;/dc:title&gt;&lt;upnp:class&gt;object.item.videoItem.movie&lt;/upnp:class&gt;&lt;res protocolInfo=\"\(dlnaProtocolInfo)\"&gt;\(didlMediaURL)&lt;/res&gt;\(subtitleTags)&lt;/item&gt;&lt;/DIDL-Lite&gt;"
 
         let action = "SetAVTransportURI"
         let body = """
@@ -34,7 +35,24 @@ public final class DLNAController: Sendable {
         </u:SetAVTransportURI>
         """
 
-        _ = try await sendSOAP(to: device.avTransportControlURL, serviceType: "urn:schemas-upnp-org:service:AVTransport:1", action: action, body: body)
+        var lastError: Error?
+        for attempt in 1...3 {
+            do {
+                _ = try await sendSOAP(to: device.avTransportControlURL, serviceType: "urn:schemas-upnp-org:service:AVTransport:1", action: action, body: body)
+                return
+            } catch {
+                lastError = error
+                let desc = error.localizedDescription
+                if attempt < 3 && (desc.contains("Transition not available") || desc.contains("701")) {
+                    try? await Task.sleep(nanoseconds: 400_000_000)
+                } else {
+                    throw error
+                }
+            }
+        }
+        if let err = lastError {
+            throw err
+        }
     }
 
     // MARK: - Set Subtitle Display (Optional UPnP RenderingControl)
@@ -221,6 +239,15 @@ public final class DLNAController: Sendable {
             .replacingOccurrences(of: "&", with: "&amp;")
             .replacingOccurrences(of: "<", with: "&lt;")
             .replacingOccurrences(of: ">", with: "&gt;")
+            .replacingOccurrences(of: "\"", with: "&quot;")
+            .replacingOccurrences(of: "'", with: "&apos;")
+    }
+
+    private func escapeDIDL(_ str: String) -> String {
+        return str
+            .replacingOccurrences(of: "&", with: "&amp;amp;")
+            .replacingOccurrences(of: "<", with: "&amp;lt;")
+            .replacingOccurrences(of: ">", with: "&amp;gt;")
             .replacingOccurrences(of: "\"", with: "&quot;")
             .replacingOccurrences(of: "'", with: "&apos;")
     }

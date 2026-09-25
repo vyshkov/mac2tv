@@ -15,35 +15,40 @@ public final class LocalStreamingServer: @unchecked Sendable {
     public private(set) var activeSubtitlePath: String?
     public private(set) var activePort: UInt16 = 0
 
-    public var currentSubtitleURL: URL? {
-        guard let localIP = NetworkHelper.getLocalIPAddress(), activePort > 0 else { return nil }
-        return URL(string: "http://\(localIP):\(activePort)/subtitles.srt")
-    }
+    public private(set) var currentSubtitleURL: URL?
 
     public func subtitleURL(forTrack track: SubtitleTrack, version: String) -> URL? {
-        guard let localIP = NetworkHelper.getLocalIPAddress(), activePort > 0 else { return nil }
-        if track.isOff {
-            return URL(string: "http://\(localIP):\(activePort)/subtitles_off_\(version).srt")
-        } else {
-            let safeTrack = track.id.replacingOccurrences(of: "/", with: "_").replacingOccurrences(of: " ", with: "_")
-            return URL(string: "http://\(localIP):\(activePort)/subtitles_\(safeTrack)_\(version).srt")
+        guard !track.isOff, activeSubtitlePath != nil, let localIP = NetworkHelper.getLocalIPAddress(), activePort > 0 else {
+            self.currentSubtitleURL = nil
+            return nil
         }
+        let safeTrack = track.id
+            .replacingOccurrences(of: "/", with: "_")
+            .replacingOccurrences(of: " ", with: "_")
+            .replacingOccurrences(of: "&", with: "_")
+            .replacingOccurrences(of: "?", with: "_")
+        let subURL = URL(string: "http://\(localIP):\(activePort)/subtitles_\(safeTrack)_\(version).srt")
+        self.currentSubtitleURL = subURL
+        return subURL
     }
 
-    public func streamURL(forSubtitleTrack subTag: String?, version: String) -> URL {
+    public func streamURL(version: String) -> URL {
         guard let localIP = NetworkHelper.getLocalIPAddress(), activePort > 0, let path = activeFilePath else {
             return currentURL ?? URL(string: "http://127.0.0.1:8089/stream.mkv")!
         }
         let fileExt = URL(fileURLWithPath: path).pathExtension
-        let safeName = "stream." + (fileExt.isEmpty ? "mkv" : fileExt)
-        let tag = subTag ?? "none"
-        let generatedURL = URL(string: "http://\(localIP):\(activePort)/\(safeName)?sub=\(tag)&v=\(version)")!
+        let ext = fileExt.isEmpty ? "mkv" : fileExt
+        let safeName = "stream_\(version).\(ext)"
+        let generatedURL = URL(string: "http://\(localIP):\(activePort)/\(safeName)")!
         self.currentURL = generatedURL
         return generatedURL
     }
 
     public func setSubtitleFile(path: String?) {
         self.activeSubtitlePath = path
+        if path == nil {
+            self.currentSubtitleURL = nil
+        }
         NSLog("[LocalStreamingServer] Active subtitle set to: %@", path ?? "None")
     }
 
@@ -145,6 +150,7 @@ public final class LocalStreamingServer: @unchecked Sendable {
         currentURL = nil
         activeFilePath = nil
         activeSubtitlePath = nil
+        currentSubtitleURL = nil
         activePort = 0
     }
 
@@ -200,28 +206,25 @@ public final class LocalStreamingServer: @unchecked Sendable {
 
         // Handle Subtitle requests (e.g. GET /subtitles*.srt or *.srt)
         if requestLine.contains("subtitles") || requestLine.contains(".srt") {
-            let subData: Data
-            if let subPath = activeSubtitlePath,
-               let fileData = try? Data(contentsOf: URL(fileURLWithPath: subPath)),
-               !fileData.isEmpty {
-                subData = fileData
-            } else {
-                // Return an empty, valid 1-millisecond dummy SRT file to clear any active/embedded subtitles on the TV
-                let emptySRT = "1\r\n00:00:00,000 --> 00:00:00,001\r\n \r\n\r\n"
-                subData = emptySRT.data(using: .utf8) ?? Data()
+            guard let subPath = activeSubtitlePath,
+                  let fileData = try? Data(contentsOf: URL(fileURLWithPath: subPath)),
+                  !fileData.isEmpty else {
+                let notFound = "HTTP/1.1 404 Not Found\r\nContent-Length: 0\r\nConnection: close\r\n\r\n"
+                _ = notFound.withCString { write(clientSock, $0, strlen($0)) }
+                return
             }
 
             let subHeaders = "HTTP/1.1 200 OK\r\n" +
                              "Server: MKVAirPlay/1.0\r\n" +
                              "Content-Type: text/srt; charset=utf-8\r\n" +
                              "Accept-Ranges: bytes\r\n" +
-                             "Content-Length: \(subData.count)\r\n" +
+                             "Content-Length: \(fileData.count)\r\n" +
                              "Cache-Control: no-cache, no-store, must-revalidate\r\n" +
                              "Connection: close\r\n\r\n"
             _ = subHeaders.withCString { write(clientSock, $0, strlen($0)) }
             if !isHead {
-                _ = subData.withUnsafeBytes { ptr in
-                    write(clientSock, ptr.baseAddress!, subData.count)
+                _ = fileData.withUnsafeBytes { ptr in
+                    write(clientSock, ptr.baseAddress!, fileData.count)
                 }
             }
             return

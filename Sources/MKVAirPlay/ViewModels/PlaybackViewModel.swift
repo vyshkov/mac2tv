@@ -134,9 +134,14 @@ public final class PlaybackViewModel: ObservableObject {
                     lastSeekTime = Date()
                     statusMessage = "Updating subtitles to \(track.displayName)..."
 
-                    let version = "\(Int(Date().timeIntervalSince1970))_\(UUID().uuidString.prefix(6))"
-                    let subStreamURL = server.subtitleURL(forTrack: track, version: version)
-                    let streamURL = server.streamURL(forSubtitleTrack: track.isOff ? "off" : track.id, version: version)
+                    let safeTrackId = track.isOff ? "off" : track.id
+                        .replacingOccurrences(of: "/", with: "_")
+                        .replacingOccurrences(of: " ", with: "_")
+                        .replacingOccurrences(of: "&", with: "_")
+                        .replacingOccurrences(of: "?", with: "_")
+                    let version = "\(Int(Date().timeIntervalSince1970))_\(safeTrackId)"
+                    let subStreamURL = track.isOff ? nil : server.subtitleURL(forTrack: track, version: version)
+                    let streamURL = server.streamURL(version: version)
                     activeStreamURL = streamURL.absoluteString
 
                     try await dlna.setAVTransportURI(
@@ -202,9 +207,14 @@ public final class PlaybackViewModel: ObservableObject {
 
                 // 2. Start local byte-range HTTP server
                 _ = try server.start(filePath: fileURL.path)
-                let version = "\(Int(Date().timeIntervalSince1970))_\(UUID().uuidString.prefix(6))"
-                let streamURL = server.streamURL(forSubtitleTrack: selectedSubtitle.isOff ? "off" : selectedSubtitle.id, version: version)
-                let subStreamURL = server.subtitleURL(forTrack: selectedSubtitle, version: version)
+                let safeTrackId = selectedSubtitle.isOff ? "off" : selectedSubtitle.id
+                    .replacingOccurrences(of: "/", with: "_")
+                    .replacingOccurrences(of: " ", with: "_")
+                    .replacingOccurrences(of: "&", with: "_")
+                    .replacingOccurrences(of: "?", with: "_")
+                let version = "\(Int(Date().timeIntervalSince1970))_\(safeTrackId)"
+                let streamURL = server.streamURL(version: version)
+                let subStreamURL = selectedSubtitle.isOff ? nil : server.subtitleURL(forTrack: selectedSubtitle, version: version)
                 activeStreamURL = streamURL.absoluteString
 
                 // 3. Instruct TV to load media URI + Subtitles
