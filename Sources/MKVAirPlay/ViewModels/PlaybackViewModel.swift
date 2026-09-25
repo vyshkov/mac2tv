@@ -16,9 +16,17 @@ public final class PlaybackViewModel: ObservableObject {
     @Published public var selectedDevice: DLNADevice?
     @Published public var isSearchingDevices: Bool = false
 
-    @Published public var isStreaming: Bool = false
+    @Published public var isStreaming: Bool = false {
+        didSet {
+            updateSleepPrevention()
+        }
+    }
     @Published public var isConnecting: Bool = false
-    @Published public var playbackState: TransportState = .stopped
+    @Published public var playbackState: TransportState = .stopped {
+        didSet {
+            updateSleepPrevention()
+        }
+    }
     @Published public var currentTime: Double = 0
     @Published public var duration: Double = 0
 
@@ -28,7 +36,7 @@ public final class PlaybackViewModel: ObservableObject {
     @Published public var availableSubtitles: [SubtitleTrack] = [SubtitleTrack.off]
     @Published public var selectedSubtitle: SubtitleTrack = SubtitleTrack.off
 
-    @Published public var preventSleepOnLidClose: Bool = (UserDefaults.standard.object(forKey: "preventSleepOnLidClose") as? Bool) ?? true {
+    @Published public var preventSleepOnLidClose: Bool = (UserDefaults.standard.object(forKey: "preventSleepOnLidClose") as? Bool) ?? false {
         didSet {
             UserDefaults.standard.set(preventSleepOnLidClose, forKey: "preventSleepOnLidClose")
             updateSleepPrevention()
@@ -47,6 +55,8 @@ public final class PlaybackViewModel: ObservableObject {
     private var cancellables = Set<AnyCancellable>()
     private var pollTimer: Timer?
     private var subtitleSwitchTask: Task<Void, Never>?
+    private var hasStartedPlaying: Bool = false
+    private var consecutivePollErrors: Int = 0
     private let discovery = SSDPDiscovery.shared
     private let server = LocalStreamingServer.shared
     private let dlna = DLNAController.shared
@@ -313,6 +323,8 @@ public final class PlaybackViewModel: ObservableObject {
                 try await dlna.play(device: device)
                 await dlna.setSubtitleDisplay(device: device, enabled: !selectedSubtitle.isOff)
 
+                hasStartedPlaying = false
+                consecutivePollErrors = 0
                 isStreaming = true
                 isConnecting = false
                 playbackState = .playing
@@ -327,6 +339,9 @@ public final class PlaybackViewModel: ObservableObject {
                 playbackState = .error(error.localizedDescription)
                 errorMessage = "Streaming error: \(error.localizedDescription)"
                 statusMessage = "Streaming failed"
+                if preventSleepOnLidClose {
+                    preventSleepOnLidClose = false
+                }
                 updateSleepPrevention()
             }
         }
@@ -353,20 +368,20 @@ public final class PlaybackViewModel: ObservableObject {
         }
     }
 
-    public func stop() {
+    public func stop(reason: String? = nil) {
         stopPolling()
         guard let device = selectedDevice else {
-            finishStop()
+            finishStop(message: reason)
             return
         }
 
         Task {
             try? await dlna.stop(device: device)
-            finishStop()
+            finishStop(message: reason)
         }
     }
 
-    private func finishStop() {
+    private func finishStop(message: String? = nil) {
         subtitleSwitchTask?.cancel()
         subtitleSwitchTask = nil
         server.stop()
@@ -375,7 +390,20 @@ public final class PlaybackViewModel: ObservableObject {
         playbackState = .stopped
         currentTime = 0
         activeStreamURL = nil
-        statusMessage = selectedFileURL != nil ? "Ready to stream" : "Select a video file to begin"
+        hasStartedPlaying = false
+        consecutivePollErrors = 0
+
+        if let msg = message {
+            statusMessage = msg
+        } else {
+            statusMessage = selectedFileURL != nil ? "Ready to stream" : "Select a video file to begin"
+        }
+
+        // Automatically disable lid-close streaming option so laptop won't stay awake
+        if preventSleepOnLidClose {
+            NSLog("[PlaybackViewModel] Playback stopped. Automatically disabling lid-close sleep prevention to save battery.")
+            preventSleepOnLidClose = false
+        }
         updateSleepPrevention()
     }
 
@@ -444,6 +472,7 @@ public final class PlaybackViewModel: ObservableObject {
     private func pollStatus(device: DLNADevice) async {
         do {
             let info = try await dlna.getPositionInfo(device: device)
+            consecutivePollErrors = 0
 
             let timeSinceSeek = Date().timeIntervalSince(lastSeekTime)
             if !isUserScrubbing && timeSinceSeek > 1.2 {
@@ -459,13 +488,29 @@ public final class PlaybackViewModel: ObservableObject {
                 playbackState = info.state
             }
 
-            // If stopped unexpectedly on TV
-            if info.state == .stopped && currentTime > 0 && currentTime >= (duration - 2) {
-                statusMessage = "Playback finished"
-                stop()
+            if info.state == .playing || currentTime > 1.0 {
+                hasStartedPlaying = true
+            }
+
+            // Detect finished or stopped playback:
+            // 1. Natural end: Duration known, and current time reached end (within 2s)
+            let reachedEnd = duration > 5.0 && currentTime >= (duration - 2.0)
+            // 2. TV stopped after playing: TV entered stopped/no_media state
+            let tvStoppedAfterPlayback = hasStartedPlaying && info.state == .stopped
+
+            if reachedEnd || tvStoppedAfterPlayback {
+                NSLog("[PlaybackViewModel] Playback completion detected (tvStopped: %d, reachedEnd: %d, time: %.1f, duration: %.1f)", tvStoppedAfterPlayback ? 1 : 0, reachedEnd ? 1 : 0, currentTime, duration)
+                let completionMsg = reachedEnd ? "Playback finished" : "Playback stopped on TV"
+                stop(reason: completionMsg)
             }
         } catch {
-            // Polling error non-fatal, will retry next second
+            consecutivePollErrors += 1
+            NSLog("[PlaybackViewModel] Polling error (#%d): %@", consecutivePollErrors, error.localizedDescription)
+            // If TV is unreachable for ~6 consecutive seconds (e.g. turned off by remote or network loss), stop session
+            if isStreaming && consecutivePollErrors >= 6 {
+                NSLog("[PlaybackViewModel] TV unreachable for 6 seconds; assuming TV powered off. Stopping session.")
+                stop(reason: "TV disconnected or turned off")
+            }
         }
     }
 }

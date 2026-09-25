@@ -16,7 +16,7 @@ public enum TransportState: Equatable, Sendable {
             self = .playing
         case "PAUSED_PLAYBACK", "PAUSED":
             self = .paused
-        case "STOPPED":
+        case "STOPPED", "NO_MEDIA_PRESENT":
             self = .stopped
         case "TRANSITIONING", "BUFFERING":
             self = .transitioning

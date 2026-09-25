@@ -204,8 +204,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
         menu.addItem(NSMenuItem.separator())
 
         // 5. Keep Streaming When Lid is Closed Option
+        let isSleepActive = vm.isStreaming && vm.playbackState == .playing && vm.preventSleepOnLidClose
+        let sleepTitle = isSleepActive ? "Keep Streaming When Lid is Closed (Active)" : "Keep Streaming When Lid is Closed"
         let sleepItem = NSMenuItem(
-            title: "Keep Streaming When Lid is Closed",
+            title: sleepTitle,
             action: #selector(togglePreventSleepOnLidClose),
             keyEquivalent: ""
         )

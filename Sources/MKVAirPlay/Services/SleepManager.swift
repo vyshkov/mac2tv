@@ -41,10 +41,10 @@ public final class SleepManager: @unchecked Sendable {
             &networkAssertionID
         )
 
-        // 4. Background caffeinate process: -i (idle sleep), -s (system sleep), -m (disk idle)
+        // 4. Background caffeinate process: -i (idle sleep), -s (system sleep), -m (disk idle), -w (bound to app PID)
         let proc = Process()
         proc.executableURL = URL(fileURLWithPath: "/usr/bin/caffeinate")
-        proc.arguments = ["-i", "-s", "-m"]
+        proc.arguments = ["-i", "-s", "-m", "-w", "\(ProcessInfo.processInfo.processIdentifier)"]
         do {
             try proc.run()
             caffeinateProcess = proc
