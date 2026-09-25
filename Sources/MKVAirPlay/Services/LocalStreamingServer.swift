@@ -22,12 +22,7 @@ public final class LocalStreamingServer: @unchecked Sendable {
             self.currentSubtitleURL = nil
             return nil
         }
-        let safeTrack = track.id
-            .replacingOccurrences(of: "/", with: "_")
-            .replacingOccurrences(of: " ", with: "_")
-            .replacingOccurrences(of: "&", with: "_")
-            .replacingOccurrences(of: "?", with: "_")
-        let subURL = URL(string: "http://\(localIP):\(activePort)/subtitles_\(safeTrack)_\(version).srt")
+        let subURL = URL(string: "http://\(localIP):\(activePort)/stream_\(version).srt")
         self.currentSubtitleURL = subURL
         return subURL
     }
@@ -139,6 +134,16 @@ public final class LocalStreamingServer: @unchecked Sendable {
             close(serverSocket)
             serverSocket = -1
         }
+        closeActiveConnections()
+
+        currentURL = nil
+        activeFilePath = nil
+        activeSubtitlePath = nil
+        currentSubtitleURL = nil
+        activePort = 0
+    }
+
+    public func closeActiveConnections() {
         connectionLock.lock()
         for client in activeConnections {
             shutdown(client, SHUT_RDWR)
@@ -146,12 +151,6 @@ public final class LocalStreamingServer: @unchecked Sendable {
         }
         activeConnections.removeAll()
         connectionLock.unlock()
-
-        currentURL = nil
-        activeFilePath = nil
-        activeSubtitlePath = nil
-        currentSubtitleURL = nil
-        activePort = 0
     }
 
     private func acceptLoop(socket: Int32) {
@@ -202,18 +201,22 @@ public final class LocalStreamingServer: @unchecked Sendable {
         let lines = requestString.components(separatedBy: "\r\n")
         guard let requestLine = lines.first else { return }
 
+        NSLog("[LocalStreamingServer] Incoming: %@", requestLine)
+
         let isHead = requestLine.uppercased().starts(with: "HEAD")
 
-        // Handle Subtitle requests (e.g. GET /subtitles*.srt or *.srt)
-        if requestLine.contains("subtitles") || requestLine.contains(".srt") {
+        // Handle Subtitle requests (e.g. GET /stream_*.srt, GET /subtitles*.srt or *.srt)
+        if requestLine.contains(".srt") || requestLine.contains("subtitles") {
             guard let subPath = activeSubtitlePath,
                   let fileData = try? Data(contentsOf: URL(fileURLWithPath: subPath)),
                   !fileData.isEmpty else {
+                NSLog("[LocalStreamingServer] Subtitle requested but activeSubtitlePath is nil or empty: %@", requestLine)
                 let notFound = "HTTP/1.1 404 Not Found\r\nContent-Length: 0\r\nConnection: close\r\n\r\n"
                 _ = notFound.withCString { write(clientSock, $0, strlen($0)) }
                 return
             }
 
+            NSLog("[LocalStreamingServer] Serving subtitles (%ld bytes) for: %@", fileData.count, requestLine)
             let subHeaders = "HTTP/1.1 200 OK\r\n" +
                              "Server: MKVAirPlay/1.0\r\n" +
                              "Content-Type: text/srt; charset=utf-8\r\n" +
@@ -223,8 +226,14 @@ public final class LocalStreamingServer: @unchecked Sendable {
                              "Connection: close\r\n\r\n"
             _ = subHeaders.withCString { write(clientSock, $0, strlen($0)) }
             if !isHead {
-                _ = fileData.withUnsafeBytes { ptr in
-                    write(clientSock, ptr.baseAddress!, fileData.count)
+                fileData.withUnsafeBytes { ptr in
+                    guard let base = ptr.baseAddress else { return }
+                    var totalWritten = 0
+                    while totalWritten < fileData.count {
+                        let res = write(clientSock, base + totalWritten, fileData.count - totalWritten)
+                        if res <= 0 { break }
+                        totalWritten += res
+                    }
                 }
             }
             return

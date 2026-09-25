@@ -126,7 +126,10 @@ public final class PlaybackViewModel: ObservableObject {
 
         Task {
             do {
-                let subFileURL = try? await SubtitleHelper.prepareSubtitleFile(track: track, for: fileURL)
+                if !track.isOff {
+                    statusMessage = "Preparing subtitles for \(track.displayName)..."
+                }
+                let subFileURL = try await SubtitleHelper.prepareSubtitleFile(track: track, for: fileURL)
                 server.setSubtitleFile(path: subFileURL?.path)
 
                 if isStreaming, let device = selectedDevice {
@@ -144,6 +147,11 @@ public final class PlaybackViewModel: ObservableObject {
                     let streamURL = server.streamURL(version: version)
                     activeStreamURL = streamURL.absoluteString
 
+                    NSLog("[PlaybackViewModel] Switching stream to: %@, sub: %@", streamURL.absoluteString, subStreamURL?.absoluteString ?? "nil")
+
+                    // Disconnect existing client TCP connection so TV establishes a clean connection to the new stream
+                    server.closeActiveConnections()
+
                     try await dlna.setAVTransportURI(
                         device: device,
                         mediaURL: streamURL,
@@ -157,7 +165,7 @@ public final class PlaybackViewModel: ObservableObject {
                     try await dlna.play(device: device)
 
                     if resumeTime > 1 {
-                        try await Task.sleep(nanoseconds: 400_000_000)
+                        try await Task.sleep(nanoseconds: 500_000_000)
                         try await dlna.seek(device: device, toSeconds: resumeTime)
                         lastSeekTime = Date()
                     }
@@ -165,6 +173,7 @@ public final class PlaybackViewModel: ObservableObject {
                     statusMessage = "Subtitles: \(track.displayName)"
                 }
             } catch {
+                NSLog("[PlaybackViewModel] Failed to update subtitles: %@", error.localizedDescription)
                 errorMessage = "Failed to update subtitles: \(error.localizedDescription)"
             }
         }
@@ -202,7 +211,10 @@ public final class PlaybackViewModel: ObservableObject {
         Task {
             do {
                 // 1. Prepare subtitle file if selected
-                let subFileURL = try? await SubtitleHelper.prepareSubtitleFile(track: selectedSubtitle, for: fileURL)
+                if !selectedSubtitle.isOff {
+                    statusMessage = "Preparing subtitles for \(selectedSubtitle.displayName)..."
+                }
+                let subFileURL = try await SubtitleHelper.prepareSubtitleFile(track: selectedSubtitle, for: fileURL)
                 server.setSubtitleFile(path: subFileURL?.path)
 
                 // 2. Start local byte-range HTTP server

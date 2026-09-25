@@ -122,7 +122,8 @@ public enum SubtitleHelper {
             return nil
         }
 
-        let outputURL = URL(fileURLWithPath: NSTemporaryDirectory()).appendingPathComponent("mkvairplay_subtitles_\(streamIndex).srt")
+        let safeVideoName = videoURL.deletingPathExtension().lastPathComponent.prefix(20)
+        let outputURL = URL(fileURLWithPath: NSTemporaryDirectory()).appendingPathComponent("mkvairplay_\(safeVideoName)_sub_\(streamIndex).srt")
 
         // If track already extracted and valid, reuse immediately
         if FileManager.default.fileExists(atPath: outputURL.path),

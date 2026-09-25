@@ -21,7 +21,7 @@ public final class DLNAController: Sendable {
         var subtitleTags = ""
         if let subURL = subtitleURL {
             let didlSubURL = escapeDIDL(subURL.absoluteString)
-            subtitleTags = "&lt;sec:CaptionInfo sec:type=\"srt\"&gt;\(didlSubURL)&lt;/sec:CaptionInfo&gt;&lt;sec:CaptionInfoEx sec:type=\"srt\"&gt;\(didlSubURL)&lt;/sec:CaptionInfoEx&gt;&lt;res protocolInfo=\"http-get:*:text/srt:*\"&gt;\(didlSubURL)&lt;/res&gt;&lt;res protocolInfo=\"http-get:*:smi/caption:*\"&gt;\(didlSubURL)&lt;/res&gt;"
+            subtitleTags = "&lt;sec:CaptionInfo sec:type=\"srt\"&gt;\(didlSubURL)&lt;/sec:CaptionInfo&gt;&lt;sec:CaptionInfoEx sec:type=\"srt\"&gt;\(didlSubURL)&lt;/sec:CaptionInfoEx&gt;&lt;res protocolInfo=\"http-get:*:text/srt:*\"&gt;\(didlSubURL)&lt;/res&gt;&lt;res protocolInfo=\"http-get:*:smi/caption:*\"&gt;\(didlSubURL)&lt;/res&gt;&lt;res protocolInfo=\"http-get:*:application/x-subrip:*\"&gt;\(didlSubURL)&lt;/res&gt;&lt;res protocolInfo=\"http-get:*:text/plain:*\"&gt;\(didlSubURL)&lt;/res&gt;"
         }
 
         let didl = "&lt;DIDL-Lite xmlns=\"urn:schemas-upnp-org:metadata-1-0/DIDL-Lite/\" xmlns:dc=\"http://purl.org/dc/elements/1.1/\" xmlns:upnp=\"urn:schemas-upnp-org:metadata-1-0/upnp/\" xmlns:dlna=\"urn:schemas-dlna-org:metadata-1-0/\" xmlns:sec=\"http://www.sec.co.kr/\"&gt;&lt;item id=\"0\" parentID=\"-1\" restricted=\"1\"&gt;&lt;dc:title&gt;\(escapedTitle)&lt;/dc:title&gt;&lt;upnp:class&gt;object.item.videoItem.movie&lt;/upnp:class&gt;&lt;res protocolInfo=\"\(dlnaProtocolInfo)\"&gt;\(didlMediaURL)&lt;/res&gt;\(subtitleTags)&lt;/item&gt;&lt;/DIDL-Lite&gt;"
@@ -133,14 +133,13 @@ public final class DLNAController: Sendable {
         """
 
         var lastError: Error?
-        for attempt in 1...6 {
+        for attempt in 1...8 {
             do {
                 _ = try await sendSOAP(to: device.avTransportControlURL, serviceType: "urn:schemas-upnp-org:service:AVTransport:1", action: action, body: body)
                 return
             } catch {
                 lastError = error
-                let desc = error.localizedDescription
-                if attempt < 6 && (desc.contains("Transition not available") || desc.contains("701")) {
+                if attempt < 8 {
                     try? await Task.sleep(nanoseconds: 500_000_000)
                 } else {
                     throw error
