@@ -99,15 +99,24 @@ public final class PlaybackViewModel: ObservableObject {
 
     // MARK: - File Selection
     public func selectFile(url: URL) {
-        let path = url.path
+        let standardized = url.standardizedFileURL
+        let path = standardized.path
         guard FileManager.default.fileExists(atPath: path) else {
             errorMessage = "File not found at \(path)"
             return
         }
 
-        selectedFileURL = url
-        selectedFileName = url.lastPathComponent
-        selectedFileFormat = url.pathExtension.uppercased()
+        if selectedFileURL?.standardizedFileURL == standardized && !isStreaming {
+            return
+        }
+
+        if isStreaming {
+            stop()
+        }
+
+        selectedFileURL = standardized
+        selectedFileName = standardized.lastPathComponent
+        selectedFileFormat = standardized.pathExtension.uppercased()
 
         if let attrs = try? FileManager.default.attributesOfItem(atPath: path),
            let size = attrs[.size] as? Int64 {
@@ -125,7 +134,7 @@ public final class PlaybackViewModel: ObservableObject {
         selectedSubtitle = SubtitleTrack.off
 
         Task {
-            let tracks = await SubtitleHelper.probeSubtitleTracks(for: url)
+            let tracks = await SubtitleHelper.probeSubtitleTracks(for: standardized)
             self.availableSubtitles = tracks
             // Default to first subtitle if available, or keep Off
             if let firstTrack = tracks.first(where: { !$0.isOff }) {

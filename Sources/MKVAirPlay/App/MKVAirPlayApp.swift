@@ -9,6 +9,9 @@ struct MKVAirPlayApp: App {
     var body: some Scene {
         WindowGroup {
             ContentView(viewModel: PlaybackViewModel.shared)
+                .onOpenURL { url in
+                    appDelegate.handleOpenFile(url: url)
+                }
         }
         .windowStyle(.hiddenTitleBar)
         .windowResizability(.contentMinSize)
@@ -52,6 +55,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
         setupStatusItem()
         setupWindow()
         setupStateObservation()
+        handleCommandLineArguments()
     }
 
     private func setupWindow() {
@@ -141,6 +145,39 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
         isQuitting = true
         SleepManager.shared.disableSleepPrevention()
         LocalStreamingServer.shared.stop()
+    }
+
+    // MARK: - Open With / File Handling
+    func application(_ application: NSApplication, open urls: [URL]) {
+        guard let url = urls.first else { return }
+        handleOpenFile(url: url)
+    }
+
+    func application(_ sender: NSApplication, openFile filename: String) -> Bool {
+        let url = URL(fileURLWithPath: filename)
+        handleOpenFile(url: url)
+        return true
+    }
+
+    func handleOpenFile(url: URL) {
+        guard url.isFileURL else { return }
+        let standardized = url.standardizedFileURL
+        PlaybackViewModel.shared.selectFile(url: standardized)
+        showMainWindow()
+    }
+
+    private func handleCommandLineArguments() {
+        let args = CommandLine.arguments
+        guard args.count > 1 else { return }
+
+        for arg in args.dropFirst() {
+            if arg.starts(with: "-psn") || arg.starts(with: "-") { continue }
+            let url = URL(fileURLWithPath: arg)
+            if FileManager.default.fileExists(atPath: url.path) {
+                handleOpenFile(url: url)
+                break
+            }
+        }
     }
 
     // MARK: - Menu Delegate
@@ -238,10 +275,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
         }
     }
 
-    private func showMainWindow() {
+    func showMainWindow() {
         NSApp.setActivationPolicy(.regular)
 
         guard let window = mainWindow ?? NSApp.windows.first(where: { $0.canBecomeMain && !$0.className.contains("StatusBar") }) else {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) { [weak self] in
+                self?.showMainWindow()
+            }
             return
         }
         self.mainWindow = window

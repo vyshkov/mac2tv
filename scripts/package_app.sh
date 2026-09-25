@@ -30,5 +30,12 @@ if which codesign >/dev/null 2>&1; then
     codesign --force --deep --sign - "${APP_BUNDLE}"
 fi
 
+# Register with Launch Services so Finder immediately detects document types for "Open With"
+LSREGISTER="/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister"
+if [ -x "$LSREGISTER" ]; then
+    echo "==> Registering ${APP_BUNDLE} with Launch Services..."
+    "$LSREGISTER" -f "${APP_BUNDLE}"
+fi
+
 echo "==> Successfully created ${APP_BUNDLE}!"
 echo "    You can run it directly: open ${APP_BUNDLE}"
