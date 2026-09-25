@@ -14,7 +14,8 @@ rm -rf "${APP_BUNDLE}"
 mkdir -p "${APP_BUNDLE}/Contents/MacOS"
 mkdir -p "${APP_BUNDLE}/Contents/Resources"
 
-cp .build/out/Products/Release/MKVAirPlay "${APP_BUNDLE}/Contents/MacOS/MKVAirPlay"
+BIN_DIR="$(swift build --show-bin-path -c release)"
+cp "${BIN_DIR}/MKVAirPlay" "${APP_BUNDLE}/Contents/MacOS/MKVAirPlay"
 cp Resources/Info.plist "${APP_BUNDLE}/Contents/Info.plist"
 
 if [ -f "Resources/AppIcon.icns" ]; then
