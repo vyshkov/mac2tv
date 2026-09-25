@@ -97,6 +97,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
             return true
         }
         sender.orderOut(nil)
+        NSApp.setActivationPolicy(.accessory)
         return false
     }
 
@@ -107,6 +108,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
         showMainWindow()
         return true
+    }
+
+    func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
+        isQuitting = true
+        return .terminateNow
     }
 
     func applicationWillTerminate(_ notification: Notification) {
@@ -190,30 +196,30 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
 
         if window.isVisible && !window.isMiniaturized && window.isKeyWindow {
             window.orderOut(nil)
+            NSApp.setActivationPolicy(.accessory)
         } else {
             showMainWindow()
         }
     }
 
     private func showMainWindow() {
-        guard let window = mainWindow else {
-            for w in NSApp.windows where w.canBecomeMain && !w.className.contains("StatusBar") {
-                self.mainWindow = w
-                break
-            }
-            guard let window = mainWindow else { return }
-            if window.isMiniaturized {
-                window.deminiaturize(nil)
-            }
-            window.makeKeyAndOrderFront(nil)
-            NSApp.activate(ignoringOtherApps: true)
+        NSApp.setActivationPolicy(.regular)
+
+        guard let window = mainWindow ?? NSApp.windows.first(where: { $0.canBecomeMain && !$0.className.contains("StatusBar") }) else {
             return
         }
+        self.mainWindow = window
+
         if window.isMiniaturized {
             window.deminiaturize(nil)
         }
         window.makeKeyAndOrderFront(nil)
         NSApp.activate(ignoringOtherApps: true)
+
+        DispatchQueue.main.async {
+            window.makeKeyAndOrderFront(nil)
+            NSApp.activate(ignoringOtherApps: true)
+        }
     }
 
     @objc private func togglePlayPause() {
