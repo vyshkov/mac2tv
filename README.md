@@ -3,7 +3,11 @@
 A lightweight, high-performance native macOS application to stream **MKV** and other video files directly to your Smart TV (DLNA / UPnP AV) with real-time playback controls.
 
 <p align="center">
-  <img src="Resources/AppIcon.png" alt="MKVAirPlay Icon" width="160" height="160" style="border-radius: 32px; box-shadow: 0 8px 24px rgba(0,0,0,0.3);" />
+  <img src="Resources/AppIcon.png" alt="MKVAirPlay Icon" width="128" height="128" style="border-radius: 28px;" />
+</p>
+
+<p align="center">
+  <img src="Resources/Screenshot.png" alt="MKVAirPlay Screenshot" width="560" style="border-radius: 12px; box-shadow: 0 8px 30px rgba(0,0,0,0.3);" />
 </p>
 
 ---
@@ -25,9 +29,9 @@ Standard Apple AirPlay video streaming requires video files to be in Apple-appro
 - 🎯 **Drag & Drop Simplicity**: Drop any `.mkv`, `.mp4`, `.mov`, `.avi`, `.webm`, or `.m4v` file onto the window.
 - 📺 **Zero-Config Auto-Discovery**: Automatically discovers your Smart TV on the local Wi-Fi/Ethernet network via SSDP multicast.
 - 💬 **Subtitle Settings & Switching**: Auto-detects embedded MKV subtitle tracks and external companion `.srt`/`.vtt` files. Turn subtitles off or switch languages on the fly!
-- ☕ **Clamshell Streaming (Prevent Sleep)**: Toggle to prevent your Mac from sleeping while streaming. Close your MacBook lid to turn off the screen while video continues streaming to your TV uninterrupted!
+- ☕ **Clamshell Streaming (Prevent Sleep)**: Toggle to prevent your Mac from sleeping while streaming. Close your MacBook lid to turn off the screen while video continues streaming to your TV uninterrupted (accessible in both the main window and the top panel menu bar item)!
 - 🕹️ **Interactive Timeline Scrubber**: Seek to any timestamp (`HH:MM:SS`) with live progress and duration indicators.
-- ⏩ **Quick Skips**: Skip backward/forward by 10 seconds or 1 minute.
+- ⏩ **Centered Quick Skips & Playback Controls**: Horizontally centered controls for skip backward/forward by 10 seconds or 1 minute, play/pause, and stop.
 - 📡 **Network Diagnostics**: Shows streaming endpoints, active bitrate/range requests, and device endpoints.
 - 🌐 **Manual IP Support**: Connect directly to your TV's IP address if network isolation or complex subnets block multicast discovery.
 - 🎨 **macOS Design**: Designed for macOS with dark/light mode support, vibrant accents, and smooth animations.
@@ -84,7 +88,8 @@ MKVAirPlay/
 ├── Resources/
 │   ├── AppIcon.png                        # App Icon (1024x1024)
 │   ├── AppIcon.icns                       # macOS Icon Bundle
-│   └── Info.plist                         # App metadata & local network permissions
+│   ├── Info.plist                         # App metadata & local network permissions
+│   └── Screenshot.png                     # Application screenshot
 └── scripts/
     └── package_app.sh                     # Automated .app bundler and ad-hoc code signer
 ```
