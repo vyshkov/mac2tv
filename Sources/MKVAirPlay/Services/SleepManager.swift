@@ -2,6 +2,61 @@ import Foundation
 import IOKit.pwr_mgt
 import IOKit.ps
 import AppKit
+import CoreGraphics
+
+// MARK: - Display Brightness Dynamic Controller
+final class DisplayBrightnessController: @unchecked Sendable {
+    private typealias SetBrightnessFunc = @convention(c) (CGDirectDisplayID, Float) -> Int32
+    private typealias GetBrightnessFunc = @convention(c) (CGDirectDisplayID, UnsafeMutablePointer<Float>) -> Int32
+
+    private var handle: UnsafeMutableRawPointer?
+    private var getBrightnessFn: GetBrightnessFunc?
+    private var setBrightnessFn: SetBrightnessFunc?
+
+    init() {
+        if let h = dlopen("/System/Library/PrivateFrameworks/DisplayServices.framework/DisplayServices", RTLD_LAZY) {
+            handle = h
+            if let getSym = dlsym(h, "DisplayServicesGetBrightness") {
+                getBrightnessFn = unsafeBitCast(getSym, to: GetBrightnessFunc.self)
+            }
+            if let setSym = dlsym(h, "DisplayServicesSetBrightness") {
+                setBrightnessFn = unsafeBitCast(setSym, to: SetBrightnessFunc.self)
+            }
+        }
+    }
+
+    deinit {
+        if let h = handle { dlclose(h) }
+    }
+
+    func getBuiltInDisplayID() -> CGDirectDisplayID {
+        var activeDisplays = [CGDirectDisplayID](repeating: 0, count: 16)
+        var displayCount: UInt32 = 0
+        if CGGetActiveDisplayList(16, &activeDisplays, &displayCount) == .success {
+            for i in 0..<Int(displayCount) {
+                let d = activeDisplays[i]
+                if CGDisplayIsBuiltin(d) != 0 {
+                    return d
+                }
+            }
+        }
+        return CGMainDisplayID()
+    }
+
+    func getBrightness() -> Float? {
+        guard let getFn = getBrightnessFn else { return nil }
+        var val: Float = 0
+        let ret = getFn(getBuiltInDisplayID(), &val)
+        return ret == 0 ? val : nil
+    }
+
+    func setBrightness(_ value: Float) -> Bool {
+        guard let setFn = setBrightnessFn else { return false }
+        let clamped = max(0.0, min(1.0, value))
+        let ret = setFn(getBuiltInDisplayID(), clamped)
+        return ret == 0
+    }
+}
 
 public final class SleepManager: @unchecked Sendable {
     public static let shared = SleepManager()
@@ -14,8 +69,18 @@ public final class SleepManager: @unchecked Sendable {
     public private(set) var isSleepPrevented: Bool = false
     public private(set) var isPmsetSleepDisabled: Bool = false
 
+    // MARK: - Clamshell / Lid & Display State
+    public private(set) var isLidClosed: Bool = SleepManager.isLidClosed()
+    public private(set) var isDisplayTurnedOff: Bool = false
+    private var savedBrightness: Float?
+    private let brightnessController = DisplayBrightnessController()
+    public var onLidStateChanged: ((Bool) -> Void)?
+
+    private var notifyPort: IONotificationPortRef?
+    private var clamshellNotifier: io_object_t = 0
+    private var monitorTimer: Timer?
+
     public var onBatteryCritical: ((Int) -> Void)?
-    private var batteryMonitorTimer: Timer?
 
     public struct PowerStatus: Sendable {
         public let isOnBattery: Bool
@@ -41,6 +106,25 @@ public final class SleepManager: @unchecked Sendable {
         if SleepManager.checkBatteryAuthorization() {
             restoreDefaultSleep()
         }
+
+        // Self-healing brightness recovery if app was killed while lid was closed:
+        if !SleepManager.isLidClosed() {
+            if let currentBrightness = brightnessController.getBrightness(), currentBrightness < 0.02 {
+                _ = brightnessController.setBrightness(0.5)
+                NSLog("[SleepManager] Restored display brightness to default 0.5 on startup.")
+            }
+        }
+    }
+
+    // MARK: - Clamshell / Lid Detection
+    public static func isLidClosed() -> Bool {
+        let service = IOServiceGetMatchingService(kIOMainPortDefault, IOServiceMatching("IOPMrootDomain"))
+        guard service != IO_OBJECT_NULL else { return false }
+        defer { IOObjectRelease(service) }
+        if let prop = IORegistryEntryCreateCFProperty(service, "AppleClamshellState" as CFString, kCFAllocatorDefault, 0)?.takeRetainedValue() as? Bool {
+            return prop
+        }
+        return false
     }
 
     // MARK: - Power Status
@@ -202,8 +286,12 @@ public final class SleepManager: @unchecked Sendable {
             setPmsetDisableSleep(true)
         }
 
-        // 6. Start monitoring battery level to enforce low-battery safety cutoff
-        startBatteryMonitoring()
+        // 6. Start event-driven lid monitoring and timer
+        startLidMonitoring()
+        startMonitoringTimer()
+
+        // Immediate check in case lid is already closed
+        evaluateLidState()
 
         NSLog("[SleepManager] Sleep prevention active. Mac will not sleep when lid is closed.")
     }
@@ -214,11 +302,27 @@ public final class SleepManager: @unchecked Sendable {
             if isPmsetSleepDisabled {
                 setPmsetDisableSleep(false)
             }
+            if isDisplayTurnedOff {
+                let targetBrightness = savedBrightness ?? 0.5
+                _ = brightnessController.setBrightness(targetBrightness)
+                savedBrightness = nil
+                isDisplayTurnedOff = false
+                wakeDisplay()
+            }
             return
         }
         isSleepPrevented = false
 
-        stopBatteryMonitoring()
+        stopMonitoringTimer()
+        stopLidMonitoring()
+
+        if isDisplayTurnedOff {
+            let targetBrightness = savedBrightness ?? 0.5
+            _ = brightnessController.setBrightness(targetBrightness)
+            savedBrightness = nil
+            isDisplayTurnedOff = false
+            wakeDisplay()
+        }
 
         if isPmsetSleepDisabled {
             setPmsetDisableSleep(false)
@@ -247,13 +351,151 @@ public final class SleepManager: @unchecked Sendable {
         NSLog("[SleepManager] Sleep prevention released.")
     }
 
-    // MARK: - Battery Monitoring & Safety Cutoff
-    private func startBatteryMonitoring() {
-        stopBatteryMonitoring()
+    // MARK: - Clamshell State Handling & Display Power Management
+    public func evaluateLidState() {
+        let closed = SleepManager.isLidClosed()
+        let previousState = self.isLidClosed
+        self.isLidClosed = closed
+
+        if closed != previousState {
+            NSLog("[SleepManager] Clamshell state changed: lid is now %@", closed ? "CLOSED" : "OPEN")
+            onLidStateChanged?(closed)
+        }
+
+        guard isSleepPrevented else { return }
+
+        if closed {
+            handleLidClosed()
+        } else {
+            handleLidOpened()
+        }
+    }
+
+    private func handleLidClosed() {
+        if !isDisplayTurnedOff {
+            if let currentBrightness = brightnessController.getBrightness(), currentBrightness > 0.05 {
+                savedBrightness = currentBrightness
+                NSLog("[SleepManager] Saved display brightness before lid close: %.2f", currentBrightness)
+            }
+            _ = brightnessController.setBrightness(0.0)
+            isDisplayTurnedOff = true
+            sleepDisplay()
+            NSLog("[SleepManager] MacBook lid closed while streaming. Display backlight turned off to conserve battery.")
+        } else {
+            // Already marked turned off; ensure brightness is kept at 0.0 and display sleep is requested
+            if let currentBrightness = brightnessController.getBrightness(), currentBrightness > 0.02 {
+                _ = brightnessController.setBrightness(0.0)
+                sleepDisplay()
+            }
+        }
+    }
+
+    private func handleLidOpened() {
+        guard isDisplayTurnedOff else { return }
+
+        let targetBrightness = savedBrightness ?? 0.5
+        _ = brightnessController.setBrightness(targetBrightness)
+        NSLog("[SleepManager] MacBook lid opened. Restoring display brightness to %.2f.", targetBrightness)
+        savedBrightness = nil
+        isDisplayTurnedOff = false
+
+        wakeDisplay()
+    }
+
+    private func sleepDisplay() {
+        let proc = Process()
+        proc.executableURL = URL(fileURLWithPath: "/usr/bin/pmset")
+        proc.arguments = ["displaysleepnow"]
+        let devNull = FileHandle.nullDevice
+        proc.standardOutput = devNull
+        proc.standardError = devNull
+        try? proc.run()
+
+        let service = IOServiceGetMatchingService(kIOMainPortDefault, IOServiceMatching("IODisplayWrangler"))
+        if service != IO_OBJECT_NULL {
+            IORegistryEntrySetCFProperty(service, "IORequestIdle" as CFString, kCFBooleanTrue)
+            IOObjectRelease(service)
+        }
+    }
+
+    private func wakeDisplay() {
+        var userActivityAssertionID: IOPMAssertionID = 0
+        _ = IOPMAssertionDeclareUserActivity(
+            "MKVAirPlay Lid Opened" as CFString,
+            kIOPMUserActiveLocal,
+            &userActivityAssertionID
+        )
+
+        let proc = Process()
+        proc.executableURL = URL(fileURLWithPath: "/usr/bin/caffeinate")
+        proc.arguments = ["-u", "-t", "1"]
+        let devNull = FileHandle.nullDevice
+        proc.standardOutput = devNull
+        proc.standardError = devNull
+        try? proc.run()
+    }
+
+    private func startLidMonitoring() {
+        stopLidMonitoring()
+
+        let rootDomain = IOServiceGetMatchingService(kIOMainPortDefault, IOServiceMatching("IOPMrootDomain"))
+        guard rootDomain != IO_OBJECT_NULL else { return }
+        defer { IOObjectRelease(rootDomain) }
+
+        guard let port = IONotificationPortCreate(kIOMainPortDefault) else { return }
+        self.notifyPort = port
+
+        let runLoopSource = IONotificationPortGetRunLoopSource(port).takeUnretainedValue()
+        CFRunLoopAddSource(CFRunLoopGetMain(), runLoopSource, .defaultMode)
+
+        let selfPtr = Unmanaged.passUnretained(self).toOpaque()
+        let kr = IOServiceAddInterestNotification(
+            port,
+            rootDomain,
+            kIOGeneralInterest,
+            { (refcon, service, messageType, messageArgument) in
+                guard let refcon = refcon else { return }
+                let manager = Unmanaged<SleepManager>.fromOpaque(refcon).takeUnretainedValue()
+                // 0xE0034100 is kIOPMMessageClamshellStateChange
+                if messageType == 0xE0034100 {
+                    DispatchQueue.main.async {
+                        manager.evaluateLidState()
+                    }
+                }
+            },
+            selfPtr,
+            &clamshellNotifier
+        )
+        if kr != kIOReturnSuccess {
+            NSLog("[SleepManager] Failed to register clamshell interest notification: %d", kr)
+        }
+    }
+
+    private func stopLidMonitoring() {
+        if clamshellNotifier != 0 {
+            IOObjectRelease(clamshellNotifier)
+            clamshellNotifier = 0
+        }
+        if let port = notifyPort {
+            let runLoopSource = IONotificationPortGetRunLoopSource(port).takeUnretainedValue()
+            CFRunLoopRemoveSource(CFRunLoopGetMain(), runLoopSource, .defaultMode)
+            IONotificationPortDestroy(port)
+            notifyPort = nil
+        }
+    }
+
+    // MARK: - Monitoring Timer (Battery Safeguard & Lid Fallback)
+    private func startMonitoringTimer() {
+        stopMonitoringTimer()
         DispatchQueue.main.async { [weak self] in
             guard let self = self else { return }
-            self.batteryMonitorTimer = Timer.scheduledTimer(withTimeInterval: 20.0, repeats: true) { [weak self] _ in
+            self.monitorTimer = Timer.scheduledTimer(withTimeInterval: 1.5, repeats: true) { [weak self] _ in
                 guard let self = self, self.isSleepPrevented else { return }
+
+                // 1. Check lid state
+                self.evaluateLidState()
+
+                // 2. Enforce battery safety cutoff
                 let status = SleepManager.getPowerStatus()
                 if status.isOnBattery, let level = status.batteryPercentage {
                     if level <= 15 {
@@ -265,12 +507,13 @@ public final class SleepManager: @unchecked Sendable {
         }
     }
 
-    private func stopBatteryMonitoring() {
-        batteryMonitorTimer?.invalidate()
-        batteryMonitorTimer = nil
+    private func stopMonitoringTimer() {
+        monitorTimer?.invalidate()
+        monitorTimer = nil
     }
 
     deinit {
         disableSleepPrevention()
     }
 }
+

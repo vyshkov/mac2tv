@@ -59,6 +59,7 @@ public final class PlaybackViewModel: ObservableObject {
     @Published public var isBatteryLidSleepAuthorized: Bool = SleepManager.checkBatteryAuthorization()
     @Published public var isOnBattery: Bool = SleepManager.getPowerStatus().isOnBattery
     @Published public var batteryLevel: Int? = SleepManager.getPowerStatus().batteryPercentage
+    @Published public var isLidClosed: Bool = SleepManager.isLidClosed()
     @Published public var batteryAuthErrorMessage: String? = nil
 
     @Published public var isDropTargeted: Bool = false
@@ -460,6 +461,11 @@ public final class PlaybackViewModel: ObservableObject {
                 self.stop(reason: "Streaming paused: Battery critically low (\(level)%). Sleep restored.")
             }
         }
+        SleepManager.shared.onLidStateChanged = { [weak self] closed in
+            DispatchQueue.main.async {
+                self?.isLidClosed = closed
+            }
+        }
     }
 
     public func refreshPowerAndAuthStatus() {
@@ -467,6 +473,7 @@ public final class PlaybackViewModel: ObservableObject {
         isOnBattery = status.isOnBattery
         batteryLevel = status.batteryPercentage
         isBatteryLidSleepAuthorized = SleepManager.checkBatteryAuthorization()
+        isLidClosed = SleepManager.isLidClosed()
     }
 
     public func authorizeBatteryLidSleep() {

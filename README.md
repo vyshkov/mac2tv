@@ -29,11 +29,12 @@ Standard Apple AirPlay video streaming requires video files to be in Apple-appro
 - 🎯 **Drag & Drop Simplicity**: Drop any `.mkv`, `.mp4`, `.mov`, `.avi`, `.webm`, or `.m4v` file onto the window.
 - 📺 **Zero-Config Auto-Discovery**: Automatically discovers your Smart TV on the local Wi-Fi/Ethernet network via SSDP multicast.
 - 💬 **Subtitle Settings & Switching**: Auto-detects embedded MKV subtitle tracks and external companion `.srt`/`.vtt` files. Turn subtitles off or switch languages on the fly!
-- ☕ **Clamshell Streaming (AC & Battery Support)**: Stream with your MacBook lid closed to turn off the display while audio & video continue uninterrupted.
+- ☕ **Clamshell Streaming & Display Backlight Power-Down (AC & Battery)**: Stream with your MacBook lid closed while audio & video continue uninterrupted.
+  - **Automatic Backlight Off**: When the lid is closed, MKVAirPlay automatically powers off the internal display backlight and triggers display sleep to maximize battery savings and prevent heat buildup. Opening the lid instantly restores the display to your previous brightness.
   - **Charger (AC)**: Works out of the box with zero permissions needed.
   - **Battery**: macOS normally forces sleep when the lid is closed on battery to protect against overheating in bags. MKVAirPlay provides a 1-click in-app authorization (scoped `sudoers` rule for `pmset`) allowing seamless streaming on battery.
   - **Battery Safeguard**: Auto-disables and restores default sleep as soon as playback finishes, the TV stops, or if the battery drops below 15% to prevent battery exhaustion.
-  - **Crash-Safe Self-Healing**: Automatically cleans up power settings upon app exit, or on the next launch if terminated unexpectedly.
+  - **Crash-Safe Self-Healing**: Automatically cleans up power and brightness settings upon app exit, or on the next launch if terminated unexpectedly.
 - 🕹️ **Interactive Timeline Scrubber**: Seek to any timestamp (`HH:MM:SS`) with live progress and duration indicators.
 - 🔊 **TV Volume & Mute Control**: Adjust hardware TV volume directly from your Mac with an interactive slider, precise `+` and `-` single-point step buttons, and keyboard shortcuts (`⌥⌘↑`, `⌥⌘↓`, `⌥⌘M`).
 - ⏩ **Symmetric Transport Controls**: Perfectly balanced control deck with Volume on the left, Play/Pause and quick skips (-1m, -10s, +10s, +1m) centered, and Stop on the right.

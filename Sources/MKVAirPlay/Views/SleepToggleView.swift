@@ -13,14 +13,20 @@ public struct SleepToggleView: View {
 
     private var subtitleText: String {
         if isActivelyPreventingSleep {
-            if viewModel.isOnBattery {
-                return "Active: streaming with lid closed on battery (15% safety cutoff)"
+            if viewModel.isLidClosed {
+                if viewModel.isOnBattery {
+                    return "Active: Lid closed — display backlight off to save battery (15% safety cutoff)"
+                } else {
+                    return "Active: Lid closed — display backlight off to save battery"
+                }
+            } else if viewModel.isOnBattery {
+                return "Active: streaming on battery (display backlight turns off when lid is closed)"
             } else {
-                return "Active: streaming with lid closed on charger (auto-disables when finished)"
+                return "Active: streaming on charger (display backlight turns off when lid is closed)"
             }
         } else if viewModel.preventSleepOnLidClose {
             if viewModel.isBatteryLidSleepAuthorized {
-                return "Ready: will stream with lid closed on both battery & charger"
+                return "Ready: will stream with lid closed & turn off display backlight"
             } else {
                 return "Active on charger; one-time authorization required for battery"
             }
@@ -75,10 +81,14 @@ public struct SleepToggleView: View {
                                 .foregroundColor(.primary)
 
                             if isActivelyPreventingSleep {
-                                LiquidGlassPill(
-                                    viewModel.isOnBattery ? "Active (Battery)" : "Active (AC)",
-                                    tint: viewModel.isOnBattery ? .green : .indigo
-                                )
+                                if viewModel.isLidClosed {
+                                    LiquidGlassPill("Lid Closed (Display Off)", tint: .green)
+                                } else {
+                                    LiquidGlassPill(
+                                        viewModel.isOnBattery ? "Active (Battery)" : "Active (AC)",
+                                        tint: viewModel.isOnBattery ? .green : .indigo
+                                    )
+                                }
                             } else if viewModel.preventSleepOnLidClose {
                                 if viewModel.isBatteryLidSleepAuthorized {
                                     LiquidGlassPill("Armed (AC + Battery)", tint: .purple)

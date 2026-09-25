@@ -275,7 +275,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
         let isSleepActive = vm.isStreaming && vm.playbackState == .playing && vm.preventSleepOnLidClose
         let sleepTitle: String
         if isSleepActive {
-            sleepTitle = vm.isOnBattery ? "Keep Streaming When Lid is Closed (Active on Battery)" : "Keep Streaming When Lid is Closed (Active on AC)"
+            if vm.isLidClosed {
+                sleepTitle = "Keep Streaming When Lid is Closed (Lid Closed - Display Off)"
+            } else {
+                sleepTitle = vm.isOnBattery ? "Keep Streaming When Lid is Closed (Active on Battery)" : "Keep Streaming When Lid is Closed (Active on AC)"
+            }
         } else if vm.preventSleepOnLidClose {
             sleepTitle = vm.isBatteryLidSleepAuthorized ? "Keep Streaming When Lid is Closed (Armed: AC + Battery)" : "Keep Streaming When Lid is Closed (Armed: AC only)"
         } else {
