@@ -142,10 +142,12 @@ public struct LiquidGlassPill: View {
 public struct LiquidGlassButtonStyle: ButtonStyle {
     public var isProminent: Bool = false
     public var tint: Color = .accentColor
+    public var isBuffering: Bool = false
 
-    public init(isProminent: Bool = false, tint: Color = .accentColor) {
+    public init(isProminent: Bool = false, tint: Color = .accentColor, isBuffering: Bool = false) {
         self.isProminent = isProminent
         self.tint = tint
+        self.isBuffering = isBuffering
     }
 
     public func makeBody(configuration: Configuration) -> some View {
@@ -155,10 +157,9 @@ public struct LiquidGlassButtonStyle: ButtonStyle {
                     if isProminent {
                         ZStack {
                             LinearGradient(
-                                colors: [
-                                    Color(red: 0.12, green: 0.58, blue: 1.0),
-                                    Color(red: 0.35, green: 0.32, blue: 0.96)
-                                ],
+                                colors: isBuffering ?
+                                    [Color(red: 0.08, green: 0.46, blue: 0.90), Color(red: 0.24, green: 0.28, blue: 0.84)] :
+                                    [Color(red: 0.12, green: 0.58, blue: 1.0), Color(red: 0.35, green: 0.32, blue: 0.96)],
                                 startPoint: .topLeading,
                                 endPoint: .bottomTrailing
                             )
@@ -194,12 +195,55 @@ public struct LiquidGlassButtonStyle: ButtonStyle {
                     )
             )
             .shadow(
-                color: isProminent ? tint.opacity(0.35) : Color.black.opacity(0.06),
-                radius: configuration.isPressed ? 4 : 10,
+                color: isBuffering ? Color.cyan.opacity(0.55) : (isProminent ? tint.opacity(0.35) : Color.black.opacity(0.06)),
+                radius: isBuffering ? 14 : (configuration.isPressed ? 4 : 10),
                 x: 0,
                 y: configuration.isPressed ? 1 : 4
             )
             .scaleEffect(configuration.isPressed ? 0.985 : 1.0)
             .animation(.easeOut(duration: 0.15), value: configuration.isPressed)
+    }
+}
+
+// MARK: - Buffering Shimmer Animation Modifier
+public struct BufferingShimmerModifier: ViewModifier {
+    public var isActive: Bool
+
+    public init(isActive: Bool) {
+        self.isActive = isActive
+    }
+
+    public func body(content: Content) -> some View {
+        content
+            .overlay(
+                GeometryReader { geo in
+                    if isActive {
+                        TimelineView(.animation(minimumInterval: 1.0 / 60.0)) { timeline in
+                            let t = timeline.date.timeIntervalSinceReferenceDate
+                            let phase = CGFloat(t.truncatingRemainder(dividingBy: 1.3) / 1.3)
+
+                            LinearGradient(
+                                stops: [
+                                    .init(color: .clear, location: 0.0),
+                                    .init(color: Color.white.opacity(0.38), location: 0.5),
+                                    .init(color: .clear, location: 1.0)
+                                ],
+                                startPoint: .leading,
+                                endPoint: .trailing
+                            )
+                            .frame(width: max(geo.size.width * 0.5, 40))
+                            .offset(x: -geo.size.width * 0.5 + (geo.size.width * 1.5) * phase)
+                            .blendMode(.screen)
+                        }
+                    }
+                }
+                .mask(content)
+            )
+    }
+}
+
+public extension View {
+    func bufferingShimmer(isActive: Bool) -> some View {
+        self.modifier(BufferingShimmerModifier(isActive: isActive))
     }
 }

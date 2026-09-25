@@ -6,3 +6,4 @@ Packages/
 *.swp
 MKVAirPlay.app/
 DerivedData/
+.vscode/

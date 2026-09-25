@@ -15,19 +15,31 @@ public struct PlaybackControlsView: View {
                     viewModel.startStreaming()
                 }) {
                     HStack(spacing: 10) {
-                        Image(systemName: "tv.badge.wifi")
-                            .font(.system(size: 16, weight: .bold))
-                        Text(viewModel.selectedDevice != nil ? "Stream to \(viewModel.selectedDevice!.displayName)" : "Stream to TV")
-                            .font(.system(size: 15, weight: .bold, design: .rounded))
+                        if viewModel.isConnecting {
+                            ProgressView()
+                                .progressViewStyle(CircularProgressViewStyle(tint: .white))
+                                .scaleEffect(0.85)
+                                .frame(width: 18, height: 18)
+
+                            Text(viewModel.selectedDevice != nil ? "Buffering to \(viewModel.selectedDevice!.displayName)..." : "Buffering stream...")
+                                .font(.system(size: 15, weight: .bold, design: .rounded))
+                        } else {
+                            Image(systemName: "tv.badge.wifi")
+                                .font(.system(size: 16, weight: .bold))
+                            Text(viewModel.selectedDevice != nil ? "Stream to \(viewModel.selectedDevice!.displayName)" : "Stream to TV")
+                                .font(.system(size: 15, weight: .bold, design: .rounded))
+                        }
                     }
                     .frame(maxWidth: .infinity)
                     .padding(.vertical, 14)
                     .foregroundColor(.white)
+                    .bufferingShimmer(isActive: viewModel.isConnecting)
                 }
-                .buttonStyle(LiquidGlassButtonStyle(isProminent: true, tint: .cyan))
-                .disabled(viewModel.selectedFileURL == nil || viewModel.selectedDevice == nil)
+                .buttonStyle(LiquidGlassButtonStyle(isProminent: true, tint: .cyan, isBuffering: viewModel.isConnecting))
+                .disabled(viewModel.selectedFileURL == nil || viewModel.selectedDevice == nil || viewModel.isConnecting)
                 .opacity(viewModel.selectedFileURL == nil || viewModel.selectedDevice == nil ? 0.5 : 1.0)
-                .help(viewModel.selectedFileURL == nil ? "Select a video file first" : (viewModel.selectedDevice == nil ? "Select a TV device" : "Stream to TV"))
+                .animation(.easeInOut(duration: 0.25), value: viewModel.isConnecting)
+                .help(viewModel.selectedFileURL == nil ? "Select a video file first" : (viewModel.selectedDevice == nil ? "Select a TV device" : (viewModel.isConnecting ? "Buffering stream..." : "Stream to TV")))
             } else {
                 // Active Playback Controls Deck (Liquid Glass)
                 VStack(spacing: 16) {

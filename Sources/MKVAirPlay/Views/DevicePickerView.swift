@@ -79,6 +79,7 @@ public struct DevicePickerView: View {
                     }
                     .menuStyle(.borderlessButton)
                     .fixedSize()
+                    .disabled(viewModel.isConnecting || viewModel.isStreaming)
                 }
             }
 
@@ -104,6 +105,7 @@ public struct DevicePickerView: View {
                     )
             }
             .buttonStyle(.plain)
+            .disabled(viewModel.isConnecting || viewModel.isStreaming)
             .help("Refresh TV Devices")
         }
         .liquidGlassCard(cornerRadius: 16, padding: 12)
@@ -113,8 +115,12 @@ public struct DevicePickerView: View {
     }
 
     private var statusColor: Color {
-        if viewModel.selectedDevice != nil {
+        if viewModel.isStreaming {
             return .green
+        } else if viewModel.isConnecting {
+            return .blue
+        } else if viewModel.selectedDevice != nil {
+            return .cyan
         } else if viewModel.isSearchingDevices {
             return .orange
         } else {

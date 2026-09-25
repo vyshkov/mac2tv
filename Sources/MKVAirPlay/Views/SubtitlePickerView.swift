@@ -74,7 +74,7 @@ public struct SubtitlePickerView: View {
                     }
                     .menuStyle(.borderlessButton)
                     .fixedSize()
-                    .disabled(viewModel.selectedFileURL == nil)
+                    .disabled(viewModel.selectedFileURL == nil || viewModel.isConnecting)
                 }
             }
 
@@ -88,6 +88,7 @@ public struct SubtitlePickerView: View {
     }
 
     private func openSubtitleFilePicker() {
+        guard !viewModel.isConnecting else { return }
         let panel = NSOpenPanel()
         panel.canChooseFiles = true
         panel.canChooseDirectories = false

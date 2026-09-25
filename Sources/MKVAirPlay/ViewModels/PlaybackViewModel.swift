@@ -15,6 +15,7 @@ public final class PlaybackViewModel: ObservableObject {
     @Published public var isSearchingDevices: Bool = false
 
     @Published public var isStreaming: Bool = false
+    @Published public var isConnecting: Bool = false
     @Published public var playbackState: TransportState = .stopped
     @Published public var currentTime: Double = 0
     @Published public var duration: Double = 0
@@ -103,6 +104,7 @@ public final class PlaybackViewModel: ObservableObject {
         }
 
         errorMessage = nil
+        isConnecting = false
         statusMessage = "Ready to stream \"\(selectedFileName)\""
 
         // Reset and probe for subtitles (embedded & external)
@@ -195,6 +197,7 @@ public final class PlaybackViewModel: ObservableObject {
 
     // MARK: - Streaming
     public func startStreaming() {
+        guard !isConnecting && !isStreaming else { return }
         guard let fileURL = selectedFileURL else {
             errorMessage = "Please choose a video file first."
             return
@@ -205,6 +208,7 @@ public final class PlaybackViewModel: ObservableObject {
         }
 
         errorMessage = nil
+        isConnecting = true
         statusMessage = "Starting local stream for \(device.displayName)..."
         playbackState = .transitioning
 
@@ -246,6 +250,7 @@ public final class PlaybackViewModel: ObservableObject {
                 await dlna.setSubtitleDisplay(device: device, enabled: !selectedSubtitle.isOff)
 
                 isStreaming = true
+                isConnecting = false
                 playbackState = .playing
                 statusMessage = "Streaming to \(device.displayName)"
 
@@ -254,6 +259,7 @@ public final class PlaybackViewModel: ObservableObject {
             } catch {
                 server.stop()
                 isStreaming = false
+                isConnecting = false
                 playbackState = .error(error.localizedDescription)
                 errorMessage = "Streaming error: \(error.localizedDescription)"
                 statusMessage = "Streaming failed"
@@ -299,6 +305,7 @@ public final class PlaybackViewModel: ObservableObject {
     private func finishStop() {
         server.stop()
         isStreaming = false
+        isConnecting = false
         playbackState = .stopped
         currentTime = 0
         activeStreamURL = nil

@@ -61,6 +61,7 @@ public struct DropZoneView: View {
                                 .padding(.vertical, 5)
                         }
                         .buttonStyle(LiquidGlassButtonStyle(isProminent: false))
+                        .disabled(viewModel.isConnecting)
                     }
                     .liquidGlassCard(cornerRadius: 16, padding: 12, glow: .indigo)
                 } else {
@@ -119,6 +120,7 @@ public struct DropZoneView: View {
                             .padding(.vertical, 7)
                         }
                         .buttonStyle(LiquidGlassButtonStyle(isProminent: false))
+                        .disabled(viewModel.isConnecting)
 
                         Spacer(minLength: 8)
                     }
@@ -145,7 +147,7 @@ public struct DropZoneView: View {
                                                 startPoint: .topLeading,
                                                 endPoint: .bottomTrailing
                                             ),
-                                            lineWidth: 1.2
+                                             lineWidth: 1.2
                                         )
                                 )
                                 .shadow(color: viewModel.isDropTargeted ? Color.cyan.opacity(0.4) : Color.clear, radius: 12)
@@ -203,11 +205,13 @@ public struct DropZoneView: View {
                     .shadow(color: Color.black.opacity(0.06), radius: 8, x: 0, y: 4)
                 }
                 .buttonStyle(.plain)
+                .disabled(viewModel.isConnecting)
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .onDrop(of: [.fileURL], isTargeted: $viewModel.isDropTargeted) { providers in
+            guard !viewModel.isConnecting else { return false }
             guard let provider = providers.first else { return false }
             _ = provider.loadObject(ofClass: URL.self) { url, _ in
                 if let url = url {
@@ -221,6 +225,7 @@ public struct DropZoneView: View {
     }
 
     private func openFilePicker() {
+        guard !viewModel.isConnecting else { return }
         let panel = NSOpenPanel()
         panel.canChooseFiles = true
         panel.canChooseDirectories = false

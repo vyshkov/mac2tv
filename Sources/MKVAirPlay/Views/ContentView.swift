@@ -78,9 +78,9 @@ public struct ContentView: View {
 
                             // Status Pill Badge
                             LiquidGlassPill(
-                                viewModel.isStreaming ? "Streaming" : (viewModel.selectedDevice != nil ? "Ready" : "Searching"),
-                                systemImage: viewModel.isStreaming ? "dot.radiowaves.left.and.right" : (viewModel.selectedDevice != nil ? "checkmark.circle.fill" : "antenna.radiowaves.left.and.right"),
-                                tint: viewModel.isStreaming ? .green : (viewModel.selectedDevice != nil ? .cyan : .orange)
+                                viewModel.isStreaming ? "Streaming" : (viewModel.isConnecting ? "Buffering" : (viewModel.selectedDevice != nil ? "Ready" : "Searching")),
+                                systemImage: viewModel.isStreaming ? "dot.radiowaves.left.and.right" : (viewModel.isConnecting ? "antenna.radiowaves.left.and.right" : (viewModel.selectedDevice != nil ? "checkmark.circle.fill" : "antenna.radiowaves.left.and.right")),
+                                tint: viewModel.isStreaming ? .green : (viewModel.isConnecting ? .blue : (viewModel.selectedDevice != nil ? .cyan : .orange))
                             )
                         }
                         .padding(.horizontal, 4)
