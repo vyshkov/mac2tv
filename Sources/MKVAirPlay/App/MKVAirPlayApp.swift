@@ -172,6 +172,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
     func applicationWillTerminate(_ notification: Notification) {
         isQuitting = true
         SleepManager.shared.disableSleepPrevention()
+        SleepManager.shared.restoreDefaultSleep()
         LocalStreamingServer.shared.stop()
     }
 
@@ -272,7 +273,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
 
         // 5. Keep Streaming When Lid is Closed Option
         let isSleepActive = vm.isStreaming && vm.playbackState == .playing && vm.preventSleepOnLidClose
-        let sleepTitle = isSleepActive ? "Keep Streaming When Lid is Closed (Active)" : "Keep Streaming When Lid is Closed"
+        let sleepTitle: String
+        if isSleepActive {
+            sleepTitle = vm.isOnBattery ? "Keep Streaming When Lid is Closed (Active on Battery)" : "Keep Streaming When Lid is Closed (Active on AC)"
+        } else if vm.preventSleepOnLidClose {
+            sleepTitle = vm.isBatteryLidSleepAuthorized ? "Keep Streaming When Lid is Closed (Armed: AC + Battery)" : "Keep Streaming When Lid is Closed (Armed: AC only)"
+        } else {
+            sleepTitle = "Keep Streaming When Lid is Closed"
+        }
         let sleepItem = NSMenuItem(
             title: sleepTitle,
             action: #selector(togglePreventSleepOnLidClose),

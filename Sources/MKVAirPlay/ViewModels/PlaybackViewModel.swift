@@ -51,9 +51,15 @@ public final class PlaybackViewModel: ObservableObject {
     @Published public var preventSleepOnLidClose: Bool = (UserDefaults.standard.object(forKey: "preventSleepOnLidClose") as? Bool) ?? false {
         didSet {
             UserDefaults.standard.set(preventSleepOnLidClose, forKey: "preventSleepOnLidClose")
+            refreshPowerAndAuthStatus()
             updateSleepPrevention()
         }
     }
+
+    @Published public var isBatteryLidSleepAuthorized: Bool = SleepManager.checkBatteryAuthorization()
+    @Published public var isOnBattery: Bool = SleepManager.getPowerStatus().isOnBattery
+    @Published public var batteryLevel: Int? = SleepManager.getPowerStatus().batteryPercentage
+    @Published public var batteryAuthErrorMessage: String? = nil
 
     @Published public var isDropTargeted: Bool = false
     @Published public var showingManualIPSheet: Bool = false
@@ -77,6 +83,8 @@ public final class PlaybackViewModel: ObservableObject {
     public init() {
         setupSubscriptions()
         startDiscovery()
+        refreshPowerAndAuthStatus()
+        setupBatterySafeguard()
     }
 
     // MARK: - Setup
@@ -436,10 +444,49 @@ public final class PlaybackViewModel: ObservableObject {
     }
 
     public func updateSleepPrevention() {
+        refreshPowerAndAuthStatus()
         if isStreaming && playbackState == .playing && preventSleepOnLidClose {
             SleepManager.shared.enableSleepPrevention()
         } else {
             SleepManager.shared.disableSleepPrevention()
+        }
+    }
+
+    private func setupBatterySafeguard() {
+        SleepManager.shared.onBatteryCritical = { [weak self] level in
+            DispatchQueue.main.async {
+                guard let self = self else { return }
+                NSLog("[PlaybackViewModel] Received battery critical notification (%d%%)", level)
+                self.stop(reason: "Streaming paused: Battery critically low (\(level)%). Sleep restored.")
+            }
+        }
+    }
+
+    public func refreshPowerAndAuthStatus() {
+        let status = SleepManager.getPowerStatus()
+        isOnBattery = status.isOnBattery
+        batteryLevel = status.batteryPercentage
+        isBatteryLidSleepAuthorized = SleepManager.checkBatteryAuthorization()
+    }
+
+    public func authorizeBatteryLidSleep() {
+        let res = SleepManager.installBatteryAuthorization()
+        refreshPowerAndAuthStatus()
+        if res.success {
+            batteryAuthErrorMessage = nil
+            if preventSleepOnLidClose {
+                updateSleepPrevention()
+            }
+        } else {
+            batteryAuthErrorMessage = res.error
+        }
+    }
+
+    public func revokeBatteryLidSleep() {
+        let res = SleepManager.removeBatteryAuthorization()
+        refreshPowerAndAuthStatus()
+        if !res.success {
+            batteryAuthErrorMessage = res.error
         }
     }
 
