@@ -44,6 +44,7 @@ public final class PlaybackViewModel: ObservableObject {
     // MARK: - Private Properties
     private var cancellables = Set<AnyCancellable>()
     private var pollTimer: Timer?
+    private var subtitleSwitchTask: Task<Void, Never>?
     private let discovery = SSDPDiscovery.shared
     private let server = LocalStreamingServer.shared
     private let dlna = DLNAController.shared
@@ -126,18 +127,26 @@ public final class PlaybackViewModel: ObservableObject {
         selectedSubtitle = track
         guard let fileURL = selectedFileURL else { return }
 
-        Task {
+        subtitleSwitchTask?.cancel()
+        subtitleSwitchTask = Task { @MainActor [weak self] in
+            guard let self = self else { return }
             do {
                 if !track.isOff {
-                    statusMessage = "Preparing subtitles for \(track.displayName)..."
+                    self.statusMessage = "Preparing subtitles for \(track.displayName)..."
                 }
                 let subFileURL = try await SubtitleHelper.prepareSubtitleFile(track: track, for: fileURL)
-                server.setSubtitleFile(path: subFileURL?.path)
+                guard !Task.isCancelled else { return }
 
-                if isStreaming, let device = selectedDevice {
-                    let resumeTime = currentTime
-                    lastSeekTime = Date()
-                    statusMessage = "Updating subtitles to \(track.displayName)..."
+                self.server.setSubtitleFile(path: subFileURL?.path)
+
+                if self.isStreaming, let device = self.selectedDevice {
+                    // 1. Temporarily pause position polling to prevent SOAP command collision on TV
+                    self.stopPolling()
+
+                    let resumeTime = self.currentTime
+                    self.lastSeekTime = Date()
+                    let switchStartTime = Date()
+                    self.statusMessage = "Updating subtitles to \(track.displayName)..."
 
                     let safeTrackId = track.isOff ? "off" : track.id
                         .replacingOccurrences(of: "/", with: "_")
@@ -145,38 +154,91 @@ public final class PlaybackViewModel: ObservableObject {
                         .replacingOccurrences(of: "&", with: "_")
                         .replacingOccurrences(of: "?", with: "_")
                     let version = "\(Int(Date().timeIntervalSince1970))_\(safeTrackId)"
-                    let subStreamURL = track.isOff ? nil : server.subtitleURL(forTrack: track, version: version)
-                    let streamURL = server.streamURL(version: version)
-                    activeStreamURL = streamURL.absoluteString
+                    let subStreamURL = track.isOff ? nil : self.server.subtitleURL(forTrack: track, version: version)
+                    let streamURL = self.server.streamURL(version: version)
+                    self.activeStreamURL = streamURL.absoluteString
 
                     NSLog("[PlaybackViewModel] Switching stream to: %@, sub: %@", streamURL.absoluteString, subStreamURL?.absoluteString ?? "nil")
 
-                    // Disconnect existing client TCP connection so TV establishes a clean connection to the new stream
-                    server.closeActiveConnections()
+                    // 2. Command TV to cleanly stop first
+                    try? await self.dlna.stop(device: device)
+                    try? await Task.sleep(nanoseconds: 200_000_000)
 
-                    try await dlna.setAVTransportURI(
+                    guard !Task.isCancelled else { return }
+
+                    // 3. Disconnect existing TCP connection so TV starts fresh
+                    self.server.closeActiveConnections()
+
+                    // 4. Update AVTransportURI with new stream & subtitle endpoints
+                    try await self.dlna.setAVTransportURI(
                         device: device,
                         mediaURL: streamURL,
                         title: fileURL.deletingPathExtension().lastPathComponent,
                         subtitleURL: subStreamURL
                     )
 
-                    await dlna.setSubtitleDisplay(device: device, enabled: !track.isOff)
+                    guard !Task.isCancelled else { return }
 
+                    // Small buffer for TV to parse DIDL metadata
                     try await Task.sleep(nanoseconds: 300_000_000)
-                    try await dlna.play(device: device)
 
-                    if resumeTime > 1 {
-                        try await Task.sleep(nanoseconds: 500_000_000)
-                        try await dlna.seek(device: device, toSeconds: resumeTime)
-                        lastSeekTime = Date()
+                    guard !Task.isCancelled else { return }
+
+                    // 5. Command TV to play
+                    try await self.dlna.play(device: device)
+
+                    guard !Task.isCancelled else { return }
+
+                    // 6. Set subtitle display state AFTER play has begun (not while stopped!)
+                    await self.dlna.setSubtitleDisplay(device: device, enabled: !track.isOff)
+
+                    // 7. Wait for TV to fetch subtitles before issuing Seek
+                    if !track.isOff {
+                        let maxWaitMs = 1800
+                        let pollIntervalMs = 100
+                        var waitedMs = 0
+                        while waitedMs < maxWaitMs && !Task.isCancelled {
+                            if let servedAt = self.server.lastSubtitleServedAt, servedAt >= switchStartTime {
+                                NSLog("[PlaybackViewModel] Subtitle confirmed served to TV after %d ms", waitedMs)
+                                // Give TV brief settling time to finish parsing downloaded subtitles
+                                try? await Task.sleep(nanoseconds: 250_000_000)
+                                break
+                            }
+                            try? await Task.sleep(nanoseconds: UInt64(pollIntervalMs) * 1_000_000)
+                            waitedMs += pollIntervalMs
+                        }
+                    } else {
+                        // When subtitles are off, allow video pipeline 500ms to stabilize
+                        try? await Task.sleep(nanoseconds: 500_000_000)
                     }
 
-                    statusMessage = "Subtitles: \(track.displayName)"
+                    guard !Task.isCancelled else { return }
+
+                    // 8. Seek back to previous position
+                    if resumeTime > 1 {
+                        try await self.dlna.seek(device: device, toSeconds: resumeTime)
+                        self.lastSeekTime = Date()
+
+                        // Re-assert subtitle display after seek so TV keeps rendering it
+                        if !track.isOff {
+                            try? await Task.sleep(nanoseconds: 200_000_000)
+                            await self.dlna.setSubtitleDisplay(device: device, enabled: true)
+                        }
+                    }
+
+                    self.statusMessage = "Subtitles: \(track.displayName)"
+
+                    // 9. Resume position polling
+                    self.startPolling(device: device)
                 }
             } catch {
-                NSLog("[PlaybackViewModel] Failed to update subtitles: %@", error.localizedDescription)
-                errorMessage = "Failed to update subtitles: \(error.localizedDescription)"
+                if !Task.isCancelled {
+                    NSLog("[PlaybackViewModel] Failed to update subtitles: %@", error.localizedDescription)
+                    self.errorMessage = "Failed to update subtitles: \(error.localizedDescription)"
+                    if self.isStreaming, let device = self.selectedDevice {
+                        self.startPolling(device: device)
+                    }
+                }
             }
         }
     }
@@ -303,6 +365,8 @@ public final class PlaybackViewModel: ObservableObject {
     }
 
     private func finishStop() {
+        subtitleSwitchTask?.cancel()
+        subtitleSwitchTask = nil
         server.stop()
         isStreaming = false
         isConnecting = false

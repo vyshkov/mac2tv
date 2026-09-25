@@ -56,6 +56,13 @@ public enum SubtitleHelper {
                    let streams = json["streams"] as? [[String: Any]] {
                     for stream in streams {
                         if let index = stream["index"] as? Int {
+                            let codecName = (stream["codec_name"] as? String ?? "").lowercased()
+                            let isBitmap = codecName.contains("pgs") || codecName.contains("dvd") || codecName.contains("dvb") || codecName.contains("xsub")
+                            if isBitmap {
+                                NSLog("[SubtitleHelper] Skipping unsupported bitmap subtitle codec '%@' on stream %d", codecName, index)
+                                continue
+                            }
+
                             let tags = stream["tags"] as? [String: Any]
                             let lang = tags?["language"] as? String
                             let title = tags?["title"] as? String ?? ""
@@ -132,6 +139,7 @@ public enum SubtitleHelper {
             return outputURL
         }
 
+        let tempURL = outputURL.appendingPathExtension("tmp")
         let task = Process()
         task.executableURL = URL(fileURLWithPath: ffmpegPath)
         task.arguments = [
@@ -139,15 +147,19 @@ public enum SubtitleHelper {
             "-i", videoURL.path,
             "-map", "0:\(streamIndex)",
             "-c:s", "srt",
-            outputURL.path
+            tempURL.path
         ]
 
         try task.run()
         task.waitUntilExit()
 
-        guard task.terminationStatus == 0 && FileManager.default.fileExists(atPath: outputURL.path) else {
+        guard task.terminationStatus == 0 && FileManager.default.fileExists(atPath: tempURL.path) else {
+            try? FileManager.default.removeItem(at: tempURL)
             throw NSError(domain: "SubtitleHelper", code: 1, userInfo: [NSLocalizedDescriptionKey: "Failed to extract subtitle track \(streamIndex)"])
         }
+
+        _ = try? FileManager.default.removeItem(at: outputURL)
+        try FileManager.default.moveItem(at: tempURL, to: outputURL)
 
         return outputURL
     }

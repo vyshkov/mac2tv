@@ -16,6 +16,7 @@ public final class LocalStreamingServer: @unchecked Sendable {
     public private(set) var activePort: UInt16 = 0
 
     public private(set) var currentSubtitleURL: URL?
+    public private(set) var lastSubtitleServedAt: Date?
 
     public func subtitleURL(forTrack track: SubtitleTrack, version: String) -> URL? {
         guard !track.isOff, activeSubtitlePath != nil, let localIP = NetworkHelper.getLocalIPAddress(), activePort > 0 else {
@@ -141,6 +142,7 @@ public final class LocalStreamingServer: @unchecked Sendable {
         activeSubtitlePath = nil
         currentSubtitleURL = nil
         activePort = 0
+        lastSubtitleServedAt = nil
     }
 
     public func closeActiveConnections() {
@@ -207,30 +209,34 @@ public final class LocalStreamingServer: @unchecked Sendable {
 
         // Handle Subtitle requests (e.g. GET /stream_*.srt, GET /subtitles*.srt or *.srt)
         if requestLine.contains(".srt") || requestLine.contains("subtitles") {
-            guard let subPath = activeSubtitlePath,
-                  let fileData = try? Data(contentsOf: URL(fileURLWithPath: subPath)),
-                  !fileData.isEmpty else {
-                NSLog("[LocalStreamingServer] Subtitle requested but activeSubtitlePath is nil or empty: %@", requestLine)
-                let notFound = "HTTP/1.1 404 Not Found\r\nContent-Length: 0\r\nConnection: close\r\n\r\n"
-                _ = notFound.withCString { write(clientSock, $0, strlen($0)) }
-                return
+            let subData: Data
+            if let subPath = activeSubtitlePath,
+               let fileData = try? Data(contentsOf: URL(fileURLWithPath: subPath)),
+               !fileData.isEmpty {
+                subData = fileData
+                self.lastSubtitleServedAt = Date()
+            } else {
+                // If subtitles are disabled or path is nil, return empty dummy SRT to clear any active display on TV
+                let emptySRT = "1\r\n00:00:00,000 --> 00:00:00,001\r\n \r\n\r\n"
+                subData = emptySRT.data(using: .utf8) ?? Data()
+                self.lastSubtitleServedAt = Date()
             }
 
-            NSLog("[LocalStreamingServer] Serving subtitles (%ld bytes) for: %@", fileData.count, requestLine)
+            NSLog("[LocalStreamingServer] Serving subtitles (%ld bytes) for: %@", subData.count, requestLine)
             let subHeaders = "HTTP/1.1 200 OK\r\n" +
                              "Server: MKVAirPlay/1.0\r\n" +
                              "Content-Type: text/srt; charset=utf-8\r\n" +
                              "Accept-Ranges: bytes\r\n" +
-                             "Content-Length: \(fileData.count)\r\n" +
+                             "Content-Length: \(subData.count)\r\n" +
                              "Cache-Control: no-cache, no-store, must-revalidate\r\n" +
                              "Connection: close\r\n\r\n"
             _ = subHeaders.withCString { write(clientSock, $0, strlen($0)) }
             if !isHead {
-                fileData.withUnsafeBytes { ptr in
+                subData.withUnsafeBytes { ptr in
                     guard let base = ptr.baseAddress else { return }
                     var totalWritten = 0
-                    while totalWritten < fileData.count {
-                        let res = write(clientSock, base + totalWritten, fileData.count - totalWritten)
+                    while totalWritten < subData.count {
+                        let res = write(clientSock, base + totalWritten, subData.count - totalWritten)
                         if res <= 0 { break }
                         totalWritten += res
                     }
