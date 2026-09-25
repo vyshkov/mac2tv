@@ -4,6 +4,8 @@ import Combine
 
 @MainActor
 public final class PlaybackViewModel: ObservableObject {
+    public static let shared = PlaybackViewModel()
+
     // MARK: - Published Properties
     @Published public var selectedFileURL: URL?
     @Published public var selectedFileName: String = ""

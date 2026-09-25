@@ -1,9 +1,16 @@
 import SwiftUI
 
+@MainActor
 public struct ContentView: View {
-    @StateObject private var viewModel = PlaybackViewModel()
+    @ObservedObject var viewModel: PlaybackViewModel
 
-    public init() {}
+    public init(viewModel: PlaybackViewModel) {
+        self.viewModel = viewModel
+    }
+
+    public init() {
+        self.viewModel = PlaybackViewModel.shared
+    }
 
     public var body: some View {
         ZStack {
