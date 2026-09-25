@@ -68,6 +68,74 @@ public final class DLNAController: Sendable {
         _ = try? await sendSOAP(to: rcURL, serviceType: "urn:schemas-upnp-org:service:RenderingControl:1", action: action, body: body)
     }
 
+    // MARK: - Rendering Control (Volume & Mute)
+    public func getVolume(device: DLNADevice) async throws -> Int {
+        guard let rcURL = device.renderingControlURL else {
+            throw NSError(domain: "DLNAController", code: 404, userInfo: [NSLocalizedDescriptionKey: "TV does not support volume control (RenderingControl service missing)"])
+        }
+        let action = "GetVolume"
+        let body = """
+        <u:GetVolume xmlns:u="urn:schemas-upnp-org:service:RenderingControl:1">
+          <InstanceID>0</InstanceID>
+          <Channel>Master</Channel>
+        </u:GetVolume>
+        """
+        let xml = try await sendSOAP(to: rcURL, serviceType: "urn:schemas-upnp-org:service:RenderingControl:1", action: action, body: body)
+        if let volStr = extractXMLValue(from: xml, tag: "CurrentVolume"), let vol = Int(volStr) {
+            return max(0, min(100, vol))
+        }
+        throw NSError(domain: "DLNAController", code: -1, userInfo: [NSLocalizedDescriptionKey: "Failed to parse TV volume"])
+    }
+
+    public func setVolume(device: DLNADevice, volume: Int) async throws {
+        guard let rcURL = device.renderingControlURL else {
+            throw NSError(domain: "DLNAController", code: 404, userInfo: [NSLocalizedDescriptionKey: "TV does not support volume control (RenderingControl service missing)"])
+        }
+        let clamped = max(0, min(100, volume))
+        let action = "SetVolume"
+        let body = """
+        <u:SetVolume xmlns:u="urn:schemas-upnp-org:service:RenderingControl:1">
+          <InstanceID>0</InstanceID>
+          <Channel>Master</Channel>
+          <DesiredVolume>\(clamped)</DesiredVolume>
+        </u:SetVolume>
+        """
+        _ = try await sendSOAP(to: rcURL, serviceType: "urn:schemas-upnp-org:service:RenderingControl:1", action: action, body: body)
+    }
+
+    public func getMute(device: DLNADevice) async throws -> Bool {
+        guard let rcURL = device.renderingControlURL else {
+            throw NSError(domain: "DLNAController", code: 404, userInfo: [NSLocalizedDescriptionKey: "TV does not support volume control (RenderingControl service missing)"])
+        }
+        let action = "GetMute"
+        let body = """
+        <u:GetMute xmlns:u="urn:schemas-upnp-org:service:RenderingControl:1">
+          <InstanceID>0</InstanceID>
+          <Channel>Master</Channel>
+        </u:GetMute>
+        """
+        let xml = try await sendSOAP(to: rcURL, serviceType: "urn:schemas-upnp-org:service:RenderingControl:1", action: action, body: body)
+        if let muteStr = extractXMLValue(from: xml, tag: "CurrentMute") {
+            return muteStr == "1" || muteStr.lowercased() == "true"
+        }
+        return false
+    }
+
+    public func setMute(device: DLNADevice, isMuted: Bool) async throws {
+        guard let rcURL = device.renderingControlURL else {
+            throw NSError(domain: "DLNAController", code: 404, userInfo: [NSLocalizedDescriptionKey: "TV does not support volume control (RenderingControl service missing)"])
+        }
+        let action = "SetMute"
+        let body = """
+        <u:SetMute xmlns:u="urn:schemas-upnp-org:service:RenderingControl:1">
+          <InstanceID>0</InstanceID>
+          <Channel>Master</Channel>
+          <DesiredMute>\(isMuted ? "1" : "0")</DesiredMute>
+        </u:SetMute>
+        """
+        _ = try await sendSOAP(to: rcURL, serviceType: "urn:schemas-upnp-org:service:RenderingControl:1", action: action, body: body)
+    }
+
     // MARK: - Play
     public func play(device: DLNADevice) async throws {
         let action = "Play"
@@ -223,8 +291,9 @@ public final class DLNAController: Sendable {
     }
 
     private func extractXMLValue(from xml: String, tag: String) -> String? {
-        let pattern = "<\(tag)>(.*?)</\(tag)>"
-        guard let regex = try? NSRegularExpression(pattern: pattern, options: [.dotMatchesLineSeparators]) else { return nil }
+        // Match optional XML namespace prefixes (e.g. <u:CurrentVolume> or <CurrentVolume>) and any tag attributes
+        let pattern = "<(?:[a-zA-Z0-9_-]+:)?\(tag)(?:\\s+[^>]*)?>(.*?)</(?:[a-zA-Z0-9_-]+:)?\(tag)>"
+        guard let regex = try? NSRegularExpression(pattern: pattern, options: [.dotMatchesLineSeparators, .caseInsensitive]) else { return nil }
         let range = NSRange(xml.startIndex..<xml.endIndex, in: xml)
         guard let match = regex.firstMatch(in: xml, options: [], range: range),
               let r = Range(match.range(at: 1), in: xml) else {

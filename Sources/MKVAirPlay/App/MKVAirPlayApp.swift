@@ -7,8 +7,9 @@ struct MKVAirPlayApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) var appDelegate
 
     var body: some Scene {
-        WindowGroup {
+        Window("MKVAirPlay", id: "main") {
             ContentView(viewModel: PlaybackViewModel.shared)
+                .handlesExternalEvents(preferring: ["*"], allowing: ["*"])
                 .onOpenURL { url in
                     appDelegate.handleOpenFile(url: url)
                 }
@@ -16,7 +17,9 @@ struct MKVAirPlayApp: App {
         .windowStyle(.hiddenTitleBar)
         .windowResizability(.contentMinSize)
         .defaultSize(width: 540, height: 720)
+        .handlesExternalEvents(matching: ["*"])
         .commands {
+            CommandGroup(replacing: .newItem) { }
             CommandMenu("Playback") {
                 Button(PlaybackViewModel.shared.playbackState == .playing ? "Pause" : "Play") {
                     PlaybackViewModel.shared.togglePlayPause()
@@ -29,6 +32,26 @@ struct MKVAirPlayApp: App {
                 }
                 .keyboardShortcut(".", modifiers: [.command])
                 .disabled(!PlaybackViewModel.shared.isStreaming)
+
+                Divider()
+
+                Button("Volume Up (+1)") {
+                    PlaybackViewModel.shared.adjustVolume(by: 1)
+                }
+                .keyboardShortcut(.upArrow, modifiers: [.option, .command])
+                .disabled(!PlaybackViewModel.shared.isStreaming || !PlaybackViewModel.shared.supportsVolumeControl)
+
+                Button("Volume Down (-1)") {
+                    PlaybackViewModel.shared.adjustVolume(by: -1)
+                }
+                .keyboardShortcut(.downArrow, modifiers: [.option, .command])
+                .disabled(!PlaybackViewModel.shared.isStreaming || !PlaybackViewModel.shared.supportsVolumeControl)
+
+                Button(PlaybackViewModel.shared.isMuted ? "Unmute TV" : "Mute TV") {
+                    PlaybackViewModel.shared.toggleMute()
+                }
+                .keyboardShortcut("m", modifiers: [.option, .command])
+                .disabled(!PlaybackViewModel.shared.isStreaming || !PlaybackViewModel.shared.supportsVolumeControl)
 
                 Divider()
 
@@ -61,31 +84,36 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
     private func setupWindow() {
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) { [weak self] in
             guard let self = self else { return }
+            var assignedMain = false
             for window in NSApp.windows {
                 if window.className.contains("StatusBar") { continue }
                 if !window.canBecomeMain { continue }
 
-                self.mainWindow = window
-                window.delegate = self
-                window.isReleasedWhenClosed = false
-                window.isOpaque = false
-                window.backgroundColor = .clear
-                window.titlebarAppearsTransparent = true
-                window.titleVisibility = .hidden
-                window.styleMask.insert(.fullSizeContentView)
-                window.isMovableByWindowBackground = true
-                window.minSize = NSSize(width: 500, height: 680)
+                if !assignedMain {
+                    assignedMain = true
+                    self.mainWindow = window
+                    window.delegate = self
+                    window.isReleasedWhenClosed = false
+                    window.isOpaque = false
+                    window.backgroundColor = .clear
+                    window.titlebarAppearsTransparent = true
+                    window.titleVisibility = .hidden
+                    window.styleMask.insert(.fullSizeContentView)
+                    window.isMovableByWindowBackground = true
+                    window.minSize = NSSize(width: 500, height: 680)
 
-                let frame = window.frame
-                if frame.size.height < 680 || frame.size.width < 500 {
-                    let newWidth = max(540, frame.size.width)
-                    let newHeight = max(720, frame.size.height)
-                    var newFrame = frame
-                    newFrame.origin.y -= (newHeight - frame.size.height)
-                    newFrame.size = NSSize(width: newWidth, height: newHeight)
-                    window.setFrame(newFrame, display: true, animate: true)
+                    let frame = window.frame
+                    if frame.size.height < 680 || frame.size.width < 500 {
+                        let newWidth = max(540, frame.size.width)
+                        let newHeight = max(720, frame.size.height)
+                        var newFrame = frame
+                        newFrame.origin.y -= (newHeight - frame.size.height)
+                        newFrame.size = NSSize(width: newWidth, height: newHeight)
+                        window.setFrame(newFrame, display: true, animate: true)
+                    }
+                } else {
+                    window.close()
                 }
-                break
             }
         }
     }
@@ -148,15 +176,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
     }
 
     // MARK: - Open With / File Handling
+    func applicationShouldOpenUntitledFile(_ sender: NSApplication) -> Bool {
+        return false
+    }
+
+    func applicationOpenUntitledFile(_ sender: NSApplication) -> Bool {
+        return false
+    }
+
     func application(_ application: NSApplication, open urls: [URL]) {
         guard let url = urls.first else { return }
         handleOpenFile(url: url)
-    }
-
-    func application(_ sender: NSApplication, openFile filename: String) -> Bool {
-        let url = URL(fileURLWithPath: filename)
-        handleOpenFile(url: url)
-        return true
     }
 
     func handleOpenFile(url: URL) {
@@ -285,6 +315,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
             return
         }
         self.mainWindow = window
+
+        // Close any duplicate/secondary windows
+        for otherWindow in NSApp.windows {
+            if otherWindow !== window && otherWindow.canBecomeMain && !otherWindow.className.contains("StatusBar") {
+                otherWindow.close()
+            }
+        }
 
         if window.isMiniaturized {
             window.deminiaturize(nil)

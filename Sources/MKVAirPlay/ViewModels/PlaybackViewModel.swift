@@ -13,8 +13,20 @@ public final class PlaybackViewModel: ObservableObject {
     @Published public var selectedFileFormat: String = ""
 
     @Published public var discoveredDevices: [DLNADevice] = []
-    @Published public var selectedDevice: DLNADevice?
+    @Published public var selectedDevice: DLNADevice? {
+        didSet {
+            supportsVolumeControl = selectedDevice?.renderingControlURL != nil
+            if supportsVolumeControl {
+                fetchVolume()
+            }
+        }
+    }
     @Published public var isSearchingDevices: Bool = false
+
+    @Published public var volume: Double = 50.0
+    @Published public var isMuted: Bool = false
+    @Published public var supportsVolumeControl: Bool = false
+    private var volumeDebounceTask: Task<Void, Never>?
 
     @Published public var isStreaming: Bool = false {
         didSet {
@@ -45,6 +57,7 @@ public final class PlaybackViewModel: ObservableObject {
 
     @Published public var isDropTargeted: Bool = false
     @Published public var showingManualIPSheet: Bool = false
+    @Published public var showingVolumePopover: Bool = false
     @Published public var manualIPText: String = ""
 
     @Published public var statusMessage: String = "Select a video file to begin"
@@ -332,6 +345,12 @@ public final class PlaybackViewModel: ObservableObject {
                 try await dlna.play(device: device)
                 await dlna.setSubtitleDisplay(device: device, enabled: !selectedSubtitle.isOff)
 
+                // Brief pause for TV to initialize media audio subsystem
+                try? await Task.sleep(nanoseconds: 300_000_000)
+
+                // Synchronize actual TV volume BEFORE showing playback controls
+                await syncVolume(device: device)
+
                 hasStartedPlaying = false
                 consecutivePollErrors = 0
                 isStreaming = true
@@ -462,6 +481,89 @@ public final class PlaybackViewModel: ObservableObject {
         seek(to: scrubPosition)
     }
 
+    // MARK: - Volume Control
+    private var lastVolumeChangeTime: Date = Date.distantPast
+    private var volumePollCycle: Int = 0
+    private var isSyncingVolume: Bool = false
+
+    @discardableResult
+    public func syncVolume(device: DLNADevice) async -> (volume: Int, isMuted: Bool)? {
+        guard device.renderingControlURL != nil else { return nil }
+        guard !isSyncingVolume else { return nil }
+        isSyncingVolume = true
+        defer { isSyncingVolume = false }
+
+        do {
+            let currentVol = try await dlna.getVolume(device: device)
+            let muted = try await dlna.getMute(device: device)
+
+            let timeSinceUserChange = Date().timeIntervalSince(lastVolumeChangeTime)
+            if timeSinceUserChange > 1.5 {
+                await MainActor.run {
+                    self.volume = Double(currentVol)
+                    self.isMuted = muted
+                    self.supportsVolumeControl = true
+                }
+            }
+            return (currentVol, muted)
+        } catch {
+            NSLog("[PlaybackViewModel] Could not sync TV volume: %@", error.localizedDescription)
+            return nil
+        }
+    }
+
+    public func fetchVolume() {
+        guard let device = selectedDevice, device.renderingControlURL != nil else {
+            supportsVolumeControl = false
+            return
+        }
+        supportsVolumeControl = true
+        Task {
+            await syncVolume(device: device)
+        }
+    }
+
+    public func setVolume(_ newVolume: Double) {
+        let clamped = max(0, min(100, round(newVolume)))
+        volume = clamped
+        lastVolumeChangeTime = Date()
+        if isMuted && clamped > 0 {
+            isMuted = false
+        }
+
+        guard let device = selectedDevice, device.renderingControlURL != nil else { return }
+
+        volumeDebounceTask?.cancel()
+        volumeDebounceTask = Task {
+            try? await Task.sleep(nanoseconds: 80_000_000)
+            guard !Task.isCancelled else { return }
+            do {
+                try await dlna.setVolume(device: device, volume: Int(clamped))
+            } catch {
+                NSLog("[PlaybackViewModel] Failed to set TV volume: %@", error.localizedDescription)
+            }
+        }
+    }
+
+    public func toggleMute() {
+        guard let device = selectedDevice, device.renderingControlURL != nil else { return }
+        let newMuted = !isMuted
+        isMuted = newMuted
+        lastVolumeChangeTime = Date()
+
+        Task {
+            do {
+                try await dlna.setMute(device: device, isMuted: newMuted)
+            } catch {
+                NSLog("[PlaybackViewModel] Failed to toggle TV mute: %@", error.localizedDescription)
+            }
+        }
+    }
+
+    public func adjustVolume(by delta: Double) {
+        setVolume(volume + delta)
+    }
+
     // MARK: - Position & State Polling
     private func startPolling(device: DLNADevice) {
         stopPolling()
@@ -499,6 +601,15 @@ public final class PlaybackViewModel: ObservableObject {
 
             if info.state == .playing || currentTime > 1.0 {
                 hasStartedPlaying = true
+            }
+
+            // Periodically sync TV volume (every ~2 seconds) if user isn't actively adjusting it
+            volumePollCycle += 1
+            if volumePollCycle % 2 == 0 {
+                let timeSinceVolumeChange = Date().timeIntervalSince(lastVolumeChangeTime)
+                if timeSinceVolumeChange > 1.5 {
+                    await syncVolume(device: device)
+                }
             }
 
             // Detect finished or stopped playback:

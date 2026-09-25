@@ -31,7 +31,8 @@ Standard Apple AirPlay video streaming requires video files to be in Apple-appro
 - 💬 **Subtitle Settings & Switching**: Auto-detects embedded MKV subtitle tracks and external companion `.srt`/`.vtt` files. Turn subtitles off or switch languages on the fly!
 - ☕ **Clamshell Streaming (Auto Battery Protection)**: Toggle to stream with your MacBook lid closed to turn off the display while audio & video continue uninterrupted. To protect your battery, sleep prevention only runs while a video is actively playing and automatically disables as soon as playback finishes or the TV stops!
 - 🕹️ **Interactive Timeline Scrubber**: Seek to any timestamp (`HH:MM:SS`) with live progress and duration indicators.
-- ⏩ **Centered Quick Skips & Playback Controls**: Horizontally centered controls for skip backward/forward by 10 seconds or 1 minute, play/pause, and stop.
+- 🔊 **TV Volume & Mute Control**: Adjust hardware TV volume directly from your Mac with an interactive slider, precise `+` and `-` single-point step buttons, and keyboard shortcuts (`⌥⌘↑`, `⌥⌘↓`, `⌥⌘M`).
+- ⏩ **Symmetric Transport Controls**: Perfectly balanced control deck with Volume on the left, Play/Pause and quick skips (-1m, -10s, +10s, +1m) centered, and Stop on the right.
 - 📡 **Network Diagnostics**: Shows streaming endpoints, active bitrate/range requests, and device endpoints.
 - 🌐 **Manual IP Support**: Connect directly to your TV's IP address if network isolation or complex subnets block multicast discovery.
 - 🎨 **macOS Design**: Designed for macOS with dark/light mode support, vibrant accents, and smooth animations.
