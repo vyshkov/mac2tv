@@ -113,7 +113,25 @@ public final class DLNAController: Sendable {
           <Target>\(formattedTime)</Target>
         </u:Seek>
         """
-        _ = try await sendSOAP(to: device.avTransportControlURL, serviceType: "urn:schemas-upnp-org:service:AVTransport:1", action: action, body: body)
+
+        var lastError: Error?
+        for attempt in 1...6 {
+            do {
+                _ = try await sendSOAP(to: device.avTransportControlURL, serviceType: "urn:schemas-upnp-org:service:AVTransport:1", action: action, body: body)
+                return
+            } catch {
+                lastError = error
+                let desc = error.localizedDescription
+                if attempt < 6 && (desc.contains("Transition not available") || desc.contains("701")) {
+                    try? await Task.sleep(nanoseconds: 500_000_000)
+                } else {
+                    throw error
+                }
+            }
+        }
+        if let err = lastError {
+            throw err
+        }
     }
 
     // MARK: - Get Transport Info

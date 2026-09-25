@@ -122,7 +122,14 @@ public enum SubtitleHelper {
             return nil
         }
 
-        let outputURL = URL(fileURLWithPath: NSTemporaryDirectory()).appendingPathComponent("mkvairplay_subtitles.srt")
+        let outputURL = URL(fileURLWithPath: NSTemporaryDirectory()).appendingPathComponent("mkvairplay_subtitles_\(streamIndex).srt")
+
+        // If track already extracted and valid, reuse immediately
+        if FileManager.default.fileExists(atPath: outputURL.path),
+           let attrs = try? FileManager.default.attributesOfItem(atPath: outputURL.path),
+           (attrs[.size] as? Int64 ?? 0) > 0 {
+            return outputURL
+        }
 
         let task = Process()
         task.executableURL = URL(fileURLWithPath: ffmpegPath)

@@ -129,10 +129,15 @@ public final class PlaybackViewModel: ObservableObject {
                 let subFileURL = try? await SubtitleHelper.prepareSubtitleFile(track: track, for: fileURL)
                 server.setSubtitleFile(path: subFileURL?.path)
 
-                if isStreaming, let device = selectedDevice, let streamURL = server.currentURL {
-                    let subStreamURL = track.isOff ? nil : server.currentSubtitleURL
+                if isStreaming, let device = selectedDevice {
                     let resumeTime = currentTime
+                    lastSeekTime = Date()
                     statusMessage = "Updating subtitles to \(track.displayName)..."
+
+                    let version = "\(Int(Date().timeIntervalSince1970))_\(UUID().uuidString.prefix(6))"
+                    let subStreamURL = server.subtitleURL(forTrack: track, version: version)
+                    let streamURL = server.streamURL(forSubtitleTrack: track.isOff ? "off" : track.id, version: version)
+                    activeStreamURL = streamURL.absoluteString
 
                     try await dlna.setAVTransportURI(
                         device: device,
@@ -146,9 +151,10 @@ public final class PlaybackViewModel: ObservableObject {
                     try await Task.sleep(nanoseconds: 300_000_000)
                     try await dlna.play(device: device)
 
-                    if resumeTime > 2 {
+                    if resumeTime > 1 {
                         try await Task.sleep(nanoseconds: 400_000_000)
                         try await dlna.seek(device: device, toSeconds: resumeTime)
+                        lastSeekTime = Date()
                     }
 
                     statusMessage = "Subtitles: \(track.displayName)"
@@ -195,12 +201,14 @@ public final class PlaybackViewModel: ObservableObject {
                 server.setSubtitleFile(path: subFileURL?.path)
 
                 // 2. Start local byte-range HTTP server
-                let streamURL = try server.start(filePath: fileURL.path)
+                _ = try server.start(filePath: fileURL.path)
+                let version = "\(Int(Date().timeIntervalSince1970))_\(UUID().uuidString.prefix(6))"
+                let streamURL = server.streamURL(forSubtitleTrack: selectedSubtitle.isOff ? "off" : selectedSubtitle.id, version: version)
+                let subStreamURL = server.subtitleURL(forTrack: selectedSubtitle, version: version)
                 activeStreamURL = streamURL.absoluteString
 
                 // 3. Instruct TV to load media URI + Subtitles
                 statusMessage = "Connecting to \(device.displayName)..."
-                let subStreamURL = selectedSubtitle.isOff ? nil : server.currentSubtitleURL
                 try await dlna.setAVTransportURI(
                     device: device,
                     mediaURL: streamURL,
