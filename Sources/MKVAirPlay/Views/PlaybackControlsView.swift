@@ -81,130 +81,136 @@ public struct PlaybackControlsView: View {
                         }
                     }
 
-                    // Transport Buttons Deck
-                    HStack(spacing: 18) {
-                        // -60s Glass Button
-                        Button(action: { viewModel.skip(by: -60) }) {
-                            Text("-1m")
-                                .font(.system(size: 11, weight: .bold, design: .rounded))
-                                .foregroundColor(.primary)
-                                .frame(width: 34, height: 34)
-                                .background(
-                                    Circle()
-                                        .fill(.ultraThinMaterial)
-                                )
-                                .overlay(
-                                    Circle()
-                                        .strokeBorder(LinearGradient(colors: [.white.opacity(0.4), .white.opacity(0.1)], startPoint: .top, endPoint: .bottom), lineWidth: 0.8)
-                                )
-                        }
-                        .buttonStyle(.plain)
-                        .help("Skip backward 1 minute")
+                    // Transport Buttons Deck (Horizontally Centered with Trailing Stop)
+                    ZStack {
+                        // Centered Playback Controls Deck
+                        HStack(spacing: 16) {
+                            // -60s Glass Button
+                            Button(action: { viewModel.skip(by: -60) }) {
+                                Text("-1m")
+                                    .font(.system(size: 11, weight: .bold, design: .rounded))
+                                    .foregroundColor(.primary)
+                                    .frame(width: 34, height: 34)
+                                    .background(
+                                        Circle()
+                                            .fill(.ultraThinMaterial)
+                                    )
+                                    .overlay(
+                                        Circle()
+                                            .strokeBorder(LinearGradient(colors: [.white.opacity(0.4), .white.opacity(0.1)], startPoint: .top, endPoint: .bottom), lineWidth: 0.8)
+                                    )
+                            }
+                            .buttonStyle(.plain)
+                            .help("Skip backward 1 minute")
 
-                        // -10s Glass Button
-                        Button(action: { viewModel.skip(by: -10) }) {
-                            Image(systemName: "gobackward.10")
-                                .font(.system(size: 16, weight: .semibold))
-                                .foregroundColor(.primary)
-                                .frame(width: 38, height: 38)
-                                .background(
-                                    Circle()
-                                        .fill(.ultraThinMaterial)
-                                )
-                                .overlay(
-                                    Circle()
-                                        .strokeBorder(LinearGradient(colors: [.white.opacity(0.4), .white.opacity(0.1)], startPoint: .top, endPoint: .bottom), lineWidth: 0.8)
-                                )
-                        }
-                        .buttonStyle(.plain)
-                        .help("Skip backward 10 seconds")
+                            // -10s Glass Button
+                            Button(action: { viewModel.skip(by: -10) }) {
+                                Image(systemName: "gobackward.10")
+                                    .font(.system(size: 16, weight: .semibold))
+                                    .foregroundColor(.primary)
+                                    .frame(width: 38, height: 38)
+                                    .background(
+                                        Circle()
+                                            .fill(.ultraThinMaterial)
+                                    )
+                                    .overlay(
+                                        Circle()
+                                            .strokeBorder(LinearGradient(colors: [.white.opacity(0.4), .white.opacity(0.1)], startPoint: .top, endPoint: .bottom), lineWidth: 0.8)
+                                    )
+                            }
+                            .buttonStyle(.plain)
+                            .help("Skip backward 10 seconds")
 
-                        // Play / Pause Main Liquid Orb
-                        Button(action: { viewModel.togglePlayPause() }) {
-                            ZStack {
-                                Circle()
-                                    .fill(LinearGradient(
-                                        colors: [Color(red: 0.15, green: 0.58, blue: 1.0), Color(red: 0.35, green: 0.35, blue: 0.95)],
-                                        startPoint: .topLeading,
-                                        endPoint: .bottomTrailing
-                                    ))
-                                    .frame(width: 52, height: 52)
+                            // Play / Pause Main Liquid Orb
+                            Button(action: { viewModel.togglePlayPause() }) {
+                                ZStack {
+                                    Circle()
+                                        .fill(LinearGradient(
+                                            colors: [Color(red: 0.15, green: 0.58, blue: 1.0), Color(red: 0.35, green: 0.35, blue: 0.95)],
+                                            startPoint: .topLeading,
+                                            endPoint: .bottomTrailing
+                                        ))
+                                        .frame(width: 52, height: 52)
+                                        .overlay(
+                                            Circle()
+                                                .strokeBorder(
+                                                    LinearGradient(colors: [.white.opacity(0.7), .white.opacity(0.2)], startPoint: .top, endPoint: .bottom),
+                                                    lineWidth: 1.2
+                                                )
+                                        )
+                                        .shadow(color: Color.blue.opacity(0.45), radius: 12, x: 0, y: 4)
+
+                                    Image(systemName: viewModel.playbackState == .playing ? "pause.fill" : "play.fill")
+                                        .font(.system(size: 20, weight: .bold))
+                                        .foregroundColor(.white)
+                                        .offset(x: viewModel.playbackState == .playing ? 0 : 2)
+                                }
+                            }
+                            .buttonStyle(.plain)
+                            .help(viewModel.playbackState == .playing ? "Pause" : "Play")
+
+                            // +10s Glass Button
+                            Button(action: { viewModel.skip(by: 10) }) {
+                                Image(systemName: "goforward.10")
+                                    .font(.system(size: 16, weight: .semibold))
+                                    .foregroundColor(.primary)
+                                    .frame(width: 38, height: 38)
+                                    .background(
+                                        Circle()
+                                            .fill(.ultraThinMaterial)
+                                    )
+                                    .overlay(
+                                        Circle()
+                                            .strokeBorder(LinearGradient(colors: [.white.opacity(0.4), .white.opacity(0.1)], startPoint: .top, endPoint: .bottom), lineWidth: 0.8)
+                                    )
+                            }
+                            .buttonStyle(.plain)
+                            .help("Skip forward 10 seconds")
+
+                            // +60s Glass Button
+                            Button(action: { viewModel.skip(by: 60) }) {
+                                Text("+1m")
+                                    .font(.system(size: 11, weight: .bold, design: .rounded))
+                                    .foregroundColor(.primary)
+                                    .frame(width: 34, height: 34)
+                                    .background(
+                                        Circle()
+                                            .fill(.ultraThinMaterial)
+                                    )
+                                    .overlay(
+                                        Circle()
+                                            .strokeBorder(LinearGradient(colors: [.white.opacity(0.4), .white.opacity(0.1)], startPoint: .top, endPoint: .bottom), lineWidth: 0.8)
+                                    )
+                            }
+                            .buttonStyle(.plain)
+                            .help("Skip forward 1 minute")
+                        }
+                        .frame(maxWidth: .infinity, alignment: .center)
+
+                        // Trailing Stop Button
+                        HStack {
+                            Spacer()
+
+                            Button(action: { viewModel.stop() }) {
+                                Image(systemName: "stop.fill")
+                                    .font(.system(size: 13, weight: .bold))
+                                    .foregroundColor(.red)
+                                    .frame(width: 36, height: 36)
+                                    .background(
+                                        Circle()
+                                            .fill(Color.red.opacity(0.12))
+                                    )
                                     .overlay(
                                         Circle()
                                             .strokeBorder(
-                                                LinearGradient(colors: [.white.opacity(0.7), .white.opacity(0.2)], startPoint: .top, endPoint: .bottom),
-                                                lineWidth: 1.2
+                                                LinearGradient(colors: [Color.red.opacity(0.5), Color.red.opacity(0.15)], startPoint: .top, endPoint: .bottom),
+                                                lineWidth: 0.8
                                             )
                                     )
-                                    .shadow(color: Color.blue.opacity(0.45), radius: 12, x: 0, y: 4)
-
-                                Image(systemName: viewModel.playbackState == .playing ? "pause.fill" : "play.fill")
-                                    .font(.system(size: 20, weight: .bold))
-                                    .foregroundColor(.white)
-                                    .offset(x: viewModel.playbackState == .playing ? 0 : 2)
                             }
+                            .buttonStyle(.plain)
+                            .help("Stop Streaming")
                         }
-                        .buttonStyle(.plain)
-                        .help(viewModel.playbackState == .playing ? "Pause" : "Play")
-
-                        // +10s Glass Button
-                        Button(action: { viewModel.skip(by: 10) }) {
-                            Image(systemName: "goforward.10")
-                                .font(.system(size: 16, weight: .semibold))
-                                .foregroundColor(.primary)
-                                .frame(width: 38, height: 38)
-                                .background(
-                                    Circle()
-                                        .fill(.ultraThinMaterial)
-                                )
-                                .overlay(
-                                    Circle()
-                                        .strokeBorder(LinearGradient(colors: [.white.opacity(0.4), .white.opacity(0.1)], startPoint: .top, endPoint: .bottom), lineWidth: 0.8)
-                                )
-                        }
-                        .buttonStyle(.plain)
-                        .help("Skip forward 10 seconds")
-
-                        // +60s Glass Button
-                        Button(action: { viewModel.skip(by: 60) }) {
-                            Text("+1m")
-                                .font(.system(size: 11, weight: .bold, design: .rounded))
-                                .foregroundColor(.primary)
-                                .frame(width: 34, height: 34)
-                                .background(
-                                    Circle()
-                                        .fill(.ultraThinMaterial)
-                                )
-                                .overlay(
-                                    Circle()
-                                        .strokeBorder(LinearGradient(colors: [.white.opacity(0.4), .white.opacity(0.1)], startPoint: .top, endPoint: .bottom), lineWidth: 0.8)
-                                )
-                        }
-                        .buttonStyle(.plain)
-                        .help("Skip forward 1 minute")
-
-                        Spacer()
-
-                        // Stop Glass Button
-                        Button(action: { viewModel.stop() }) {
-                            Image(systemName: "stop.fill")
-                                .font(.system(size: 13, weight: .bold))
-                                .foregroundColor(.red)
-                                .frame(width: 36, height: 36)
-                                .background(
-                                    Circle()
-                                        .fill(Color.red.opacity(0.12))
-                                )
-                                .overlay(
-                                    Circle()
-                                        .strokeBorder(
-                                            LinearGradient(colors: [Color.red.opacity(0.5), Color.red.opacity(0.15)], startPoint: .top, endPoint: .bottom),
-                                            lineWidth: 0.8
-                                        )
-                                )
-                        }
-                        .buttonStyle(.plain)
-                        .help("Stop Streaming")
                     }
                     .padding(.top, 4)
                 }

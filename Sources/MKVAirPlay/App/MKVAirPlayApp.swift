@@ -13,6 +13,28 @@ struct MKVAirPlayApp: App {
         .windowStyle(.hiddenTitleBar)
         .windowResizability(.contentMinSize)
         .defaultSize(width: 540, height: 720)
+        .commands {
+            CommandMenu("Playback") {
+                Button(PlaybackViewModel.shared.playbackState == .playing ? "Pause" : "Play") {
+                    PlaybackViewModel.shared.togglePlayPause()
+                }
+                .keyboardShortcut("p", modifiers: [.command])
+                .disabled(!PlaybackViewModel.shared.isStreaming)
+
+                Button("Stop Streaming") {
+                    PlaybackViewModel.shared.stop()
+                }
+                .keyboardShortcut(".", modifiers: [.command])
+                .disabled(!PlaybackViewModel.shared.isStreaming)
+
+                Divider()
+
+                Toggle("Keep Streaming When Lid is Closed", isOn: Binding(
+                    get: { PlaybackViewModel.shared.preventSleepOnLidClose },
+                    set: { PlaybackViewModel.shared.preventSleepOnLidClose = $0 }
+                ))
+            }
+        }
     }
 }
 
@@ -181,7 +203,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
 
         menu.addItem(NSMenuItem.separator())
 
-        // 5. Quit Application
+        // 5. Keep Streaming When Lid is Closed Option
+        let sleepItem = NSMenuItem(
+            title: "Keep Streaming When Lid is Closed",
+            action: #selector(togglePreventSleepOnLidClose),
+            keyEquivalent: ""
+        )
+        sleepItem.target = self
+        sleepItem.state = vm.preventSleepOnLidClose ? .on : .off
+        menu.addItem(sleepItem)
+
+        menu.addItem(NSMenuItem.separator())
+
+        // 6. Quit Application
         let quitItem = NSMenuItem(title: "Quit MKVAirPlay", action: #selector(quitApp), keyEquivalent: "q")
         quitItem.target = self
         menu.addItem(quitItem)
@@ -228,6 +262,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
 
     @objc private func stopStreaming() {
         PlaybackViewModel.shared.stop()
+    }
+
+    @objc private func togglePreventSleepOnLidClose() {
+        PlaybackViewModel.shared.preventSleepOnLidClose.toggle()
     }
 
     @objc private func quitApp() {
