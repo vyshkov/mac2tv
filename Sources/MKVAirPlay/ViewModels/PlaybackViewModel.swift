@@ -344,14 +344,27 @@ public final class PlaybackViewModel: ObservableObject {
                     device: device,
                     mediaURL: streamURL,
                     title: fileURL.deletingPathExtension().lastPathComponent,
-                    subtitleURL: subStreamURL
+                    subtitleURL: subStreamURL,
+                    onRetry: { [self] attempt, maxAttempts, error in
+                        Task { @MainActor [self] in
+                            self.statusMessage = "TV loading app, retrying (\(attempt + 1)/\(maxAttempts))..."
+                        }
+                    }
                 )
 
                 // Small delay to allow TV to buffer initial header
                 try await Task.sleep(nanoseconds: 500_000_000)
 
                 // 4. Command TV to play
-                try await dlna.play(device: device)
+                statusMessage = "Starting playback on \(device.displayName)..."
+                try await dlna.play(
+                    device: device,
+                    onRetry: { [self] attempt, maxAttempts, error in
+                        Task { @MainActor [self] in
+                            self.statusMessage = "Starting playback (\(attempt + 1)/\(maxAttempts))..."
+                        }
+                    }
+                )
                 await dlna.setSubtitleDisplay(device: device, enabled: !selectedSubtitle.isOff)
 
                 // Brief pause for TV to initialize media audio subsystem
@@ -374,7 +387,11 @@ public final class PlaybackViewModel: ObservableObject {
                 isStreaming = false
                 isConnecting = false
                 playbackState = .error(error.localizedDescription)
-                errorMessage = "Streaming error: \(error.localizedDescription)"
+                if (error as? URLError)?.code == .timedOut || error.localizedDescription.lowercased().contains("timed out") {
+                    errorMessage = "The TV took too long to respond. If the TV was loading an app, please try streaming again."
+                } else {
+                    errorMessage = "Streaming error: \(error.localizedDescription)"
+                }
                 statusMessage = "Streaming failed"
                 if preventSleepOnLidClose {
                     preventSleepOnLidClose = false

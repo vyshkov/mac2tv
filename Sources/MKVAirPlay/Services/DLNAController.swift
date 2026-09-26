@@ -6,9 +6,16 @@ public final class DLNAController: Sendable {
     private init() {}
 
     // MARK: - Set AV Transport URI
-    public func setAVTransportURI(device: DLNADevice, mediaURL: URL, title: String, subtitleURL: URL? = nil) async throws {
-        // Step 1: Ensure any previous playback is stopped so the TV transitions cleanly
-        try? await stop(device: device)
+    public func setAVTransportURI(
+        device: DLNADevice,
+        mediaURL: URL,
+        title: String,
+        subtitleURL: URL? = nil,
+        onRetry: (@Sendable (_ attempt: Int, _ maxAttempts: Int, _ error: Error) -> Void)? = nil
+    ) async throws {
+        // Step 1: Ensure any previous playback is stopped so the TV transitions cleanly.
+        // Use a short timeout (2.5s) for best-effort pre-stop so we don't stall if the TV app is cold.
+        try? await stop(device: device, timeout: 2.5)
         try? await Task.sleep(nanoseconds: 300_000_000)
 
         let ext = mediaURL.pathExtension
@@ -36,15 +43,25 @@ public final class DLNAController: Sendable {
         """
 
         var lastError: Error?
-        for attempt in 1...3 {
+        let maxAttempts = 3
+        for attempt in 1...maxAttempts {
             do {
-                _ = try await sendSOAP(to: device.avTransportControlURL, serviceType: "urn:schemas-upnp-org:service:AVTransport:1", action: action, body: body)
+                _ = try await sendSOAP(
+                    to: device.avTransportControlURL,
+                    serviceType: "urn:schemas-upnp-org:service:AVTransport:1",
+                    action: action,
+                    body: body,
+                    timeout: 12.0
+                )
                 return
             } catch {
                 lastError = error
-                let desc = error.localizedDescription
-                if attempt < 3 && (desc.contains("Transition not available") || desc.contains("701")) {
-                    try? await Task.sleep(nanoseconds: 400_000_000)
+                NSLog("[DLNAController] SetAVTransportURI attempt %d/%d failed: %@", attempt, maxAttempts, error.localizedDescription)
+                if attempt < maxAttempts && isRetryableError(error) {
+                    onRetry?(attempt, maxAttempts, error)
+                    // If timeout or connection issue, give the TV extra time to finish loading its app
+                    let delay = isTimeoutError(error) ? 1_500_000_000 : 800_000_000
+                    try? await Task.sleep(nanoseconds: UInt64(delay))
                 } else {
                     throw error
                 }
@@ -137,7 +154,10 @@ public final class DLNAController: Sendable {
     }
 
     // MARK: - Play
-    public func play(device: DLNADevice) async throws {
+    public func play(
+        device: DLNADevice,
+        onRetry: (@Sendable (_ attempt: Int, _ maxAttempts: Int, _ error: Error) -> Void)? = nil
+    ) async throws {
         let action = "Play"
         let body = """
         <u:Play xmlns:u="urn:schemas-upnp-org:service:AVTransport:1">
@@ -147,15 +167,23 @@ public final class DLNAController: Sendable {
         """
 
         var lastError: Error?
-        for attempt in 1...6 {
+        let maxAttempts = 5
+        for attempt in 1...maxAttempts {
             do {
-                _ = try await sendSOAP(to: device.avTransportControlURL, serviceType: "urn:schemas-upnp-org:service:AVTransport:1", action: action, body: body)
+                _ = try await sendSOAP(
+                    to: device.avTransportControlURL,
+                    serviceType: "urn:schemas-upnp-org:service:AVTransport:1",
+                    action: action,
+                    body: body,
+                    timeout: 10.0
+                )
                 return
             } catch {
                 lastError = error
-                let desc = error.localizedDescription
-                if attempt < 6 && (desc.contains("Transition not available") || desc.contains("701")) {
-                    try? await Task.sleep(nanoseconds: 500_000_000)
+                NSLog("[DLNAController] Play attempt %d/%d failed: %@", attempt, maxAttempts, error.localizedDescription)
+                if attempt < maxAttempts && isRetryableError(error) {
+                    onRetry?(attempt, maxAttempts, error)
+                    try? await Task.sleep(nanoseconds: 600_000_000)
                 } else {
                     throw error
                 }
@@ -174,18 +202,18 @@ public final class DLNAController: Sendable {
           <InstanceID>0</InstanceID>
         </u:Pause>
         """
-        _ = try await sendSOAP(to: device.avTransportControlURL, serviceType: "urn:schemas-upnp-org:service:AVTransport:1", action: action, body: body)
+        _ = try await sendSOAP(to: device.avTransportControlURL, serviceType: "urn:schemas-upnp-org:service:AVTransport:1", action: action, body: body, timeout: 5.0)
     }
 
     // MARK: - Stop
-    public func stop(device: DLNADevice) async throws {
+    public func stop(device: DLNADevice, timeout: TimeInterval = 4.0) async throws {
         let action = "Stop"
         let body = """
         <u:Stop xmlns:u="urn:schemas-upnp-org:service:AVTransport:1">
           <InstanceID>0</InstanceID>
         </u:Stop>
         """
-        _ = try await sendSOAP(to: device.avTransportControlURL, serviceType: "urn:schemas-upnp-org:service:AVTransport:1", action: action, body: body)
+        _ = try await sendSOAP(to: device.avTransportControlURL, serviceType: "urn:schemas-upnp-org:service:AVTransport:1", action: action, body: body, timeout: timeout)
     }
 
     // MARK: - Seek
@@ -203,7 +231,7 @@ public final class DLNAController: Sendable {
         var lastError: Error?
         for attempt in 1...8 {
             do {
-                _ = try await sendSOAP(to: device.avTransportControlURL, serviceType: "urn:schemas-upnp-org:service:AVTransport:1", action: action, body: body)
+                _ = try await sendSOAP(to: device.avTransportControlURL, serviceType: "urn:schemas-upnp-org:service:AVTransport:1", action: action, body: body, timeout: 8.0)
                 return
             } catch {
                 lastError = error
@@ -227,7 +255,7 @@ public final class DLNAController: Sendable {
           <InstanceID>0</InstanceID>
         </u:GetTransportInfo>
         """
-        let xml = try await sendSOAP(to: device.avTransportControlURL, serviceType: "urn:schemas-upnp-org:service:AVTransport:1", action: action, body: body)
+        let xml = try await sendSOAP(to: device.avTransportControlURL, serviceType: "urn:schemas-upnp-org:service:AVTransport:1", action: action, body: body, timeout: 3.5)
         if let stateStr = extractXMLValue(from: xml, tag: "CurrentTransportState") {
             return TransportState(rawState: stateStr)
         }
@@ -242,7 +270,7 @@ public final class DLNAController: Sendable {
           <InstanceID>0</InstanceID>
         </u:GetPositionInfo>
         """
-        let xml = try await sendSOAP(to: device.avTransportControlURL, serviceType: "urn:schemas-upnp-org:service:AVTransport:1", action: action, body: body)
+        let xml = try await sendSOAP(to: device.avTransportControlURL, serviceType: "urn:schemas-upnp-org:service:AVTransport:1", action: action, body: body, timeout: 3.5)
 
         let relTimeStr = extractXMLValue(from: xml, tag: "RelTime") ?? "00:00:00"
         let durationStr = extractXMLValue(from: xml, tag: "TrackDuration") ?? "00:00:00"
@@ -257,7 +285,13 @@ public final class DLNAController: Sendable {
     }
 
     // MARK: - Private SOAP Request Helper
-    private func sendSOAP(to controlURL: URL, serviceType: String, action: String, body: String) async throws -> String {
+    private func sendSOAP(
+        to controlURL: URL,
+        serviceType: String,
+        action: String,
+        body: String,
+        timeout: TimeInterval = 10.0
+    ) async throws -> String {
         let envelope = """
         <?xml version="1.0" encoding="utf-8"?>
         <s:Envelope xmlns:s="http://schemas.xmlsoap.org/soap/envelope/" s:encodingStyle="http://schemas.xmlsoap.org/soap/encoding/">
@@ -272,7 +306,7 @@ public final class DLNAController: Sendable {
         request.setValue("text/xml; charset=\"utf-8\"", forHTTPHeaderField: "Content-Type")
         request.setValue("\"\(serviceType)#\(action)\"", forHTTPHeaderField: "SOAPAction")
         request.httpBody = envelope.data(using: .utf8)
-        request.timeoutInterval = 5.0
+        request.timeoutInterval = timeout
 
         let (data, response) = try await URLSession.shared.data(for: request)
 
@@ -288,6 +322,54 @@ public final class DLNAController: Sendable {
         }
 
         return respString
+    }
+
+    // MARK: - Retry & Error Classification Helpers
+    private func isTimeoutError(_ error: Error) -> Bool {
+        if let urlError = error as? URLError, urlError.code == .timedOut {
+            return true
+        }
+        let nsError = error as NSError
+        if nsError.domain == NSURLErrorDomain && nsError.code == NSURLErrorTimedOut {
+            return true
+        }
+        let desc = error.localizedDescription.lowercased()
+        return desc.contains("timed out") || desc.contains("timeout")
+    }
+
+    private func isRetryableError(_ error: Error) -> Bool {
+        if isTimeoutError(error) {
+            return true
+        }
+        if let urlError = error as? URLError {
+            switch urlError.code {
+            case .cannotConnectToHost, .networkConnectionLost, .dnsLookupFailed, .cannotFindHost, .notConnectedToInternet:
+                return true
+            default:
+                break
+            }
+        }
+        let nsError = error as NSError
+        if nsError.domain == NSURLErrorDomain {
+            if nsError.code == NSURLErrorCannotConnectToHost ||
+               nsError.code == NSURLErrorNetworkConnectionLost ||
+               nsError.code == NSURLErrorCannotFindHost ||
+               nsError.code == NSURLErrorNotConnectedToInternet {
+                return true
+            }
+        }
+        let desc = error.localizedDescription.lowercased()
+        if desc.contains("transition not available") ||
+           desc.contains("701") ||
+           desc.contains("action failed") ||
+           desc.contains("501") ||
+           desc.contains("connection refused") ||
+           desc.contains("connection reset") ||
+           desc.contains("reset by peer") ||
+           desc.contains("broken pipe") {
+            return true
+        }
+        return false
     }
 
     private func extractXMLValue(from xml: String, tag: String) -> String? {

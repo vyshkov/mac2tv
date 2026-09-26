@@ -21,8 +21,10 @@ public struct PlaybackControlsView: View {
                                 .scaleEffect(0.85)
                                 .frame(width: 18, height: 18)
 
-                            Text(viewModel.selectedDevice != nil ? "Buffering to \(viewModel.selectedDevice!.displayName)..." : "Buffering stream...")
+                            Text(viewModel.statusMessage)
                                 .font(.system(size: 15, weight: .bold, design: .rounded))
+                                .lineLimit(1)
+                                .minimumScaleFactor(0.8)
                         } else {
                             Image(systemName: "tv.badge.wifi")
                                 .font(.system(size: 16, weight: .bold))

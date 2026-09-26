@@ -147,7 +147,7 @@ public struct ContentView: View {
 
                             Spacer()
 
-                            if let url = viewModel.activeStreamURL {
+                            if viewModel.isStreaming, let url = viewModel.activeStreamURL {
                                 Text(url)
                                     .font(.system(size: 10, design: .monospaced))
                                     .foregroundColor(.secondary)
