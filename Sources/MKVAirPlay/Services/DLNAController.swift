@@ -13,10 +13,17 @@ public final class DLNAController: Sendable {
         subtitleURL: URL? = nil,
         onRetry: (@Sendable (_ attempt: Int, _ maxAttempts: Int, _ error: Error) -> Void)? = nil
     ) async throws {
-        // Step 1: Ensure any previous playback is stopped so the TV transitions cleanly.
-        // Use a short timeout (2.5s) for best-effort pre-stop so we don't stall if the TV app is cold.
-        try? await stop(device: device, timeout: 2.5)
-        try? await Task.sleep(nanoseconds: 300_000_000)
+        // Step 1: Only stop previous playback if the TV is actually playing or paused.
+        // Sending Stop to an idle TV triggers an unnecessary TRANSITIONING state on LG webOS.
+        if let currentState = try? await getTransportInfo(device: device) {
+            if currentState == .playing || currentState == .paused {
+                try? await stop(device: device, timeout: 2.5)
+                try? await Task.sleep(nanoseconds: 400_000_000)
+            } else if currentState == .transitioning {
+                // TV is already transitioning from a prior command, wait for it to settle
+                try? await Task.sleep(nanoseconds: 800_000_000)
+            }
+        }
 
         let ext = mediaURL.pathExtension
         let mime = NetworkHelper.mimeType(for: ext)
@@ -43,8 +50,14 @@ public final class DLNAController: Sendable {
         """
 
         var lastError: Error?
-        let maxAttempts = 3
+        let maxAttempts = 4
         for attempt in 1...maxAttempts {
+            // If the TV is currently transitioning, wait for it to finish before issuing SetAVTransportURI
+            if let state = try? await getTransportInfo(device: device), state == .transitioning {
+                NSLog("[DLNAController] TV is transitioning before SetAVTransportURI (attempt %d/%d). Waiting...", attempt, maxAttempts)
+                try? await Task.sleep(nanoseconds: 800_000_000)
+            }
+
             do {
                 _ = try await sendSOAP(
                     to: device.avTransportControlURL,
@@ -59,9 +72,8 @@ public final class DLNAController: Sendable {
                 NSLog("[DLNAController] SetAVTransportURI attempt %d/%d failed: %@", attempt, maxAttempts, error.localizedDescription)
                 if attempt < maxAttempts && isRetryableError(error) {
                     onRetry?(attempt, maxAttempts, error)
-                    // If timeout or connection issue, give the TV extra time to finish loading its app
-                    let delay = isTimeoutError(error) ? 1_500_000_000 : 800_000_000
-                    try? await Task.sleep(nanoseconds: UInt64(delay))
+                    let delay: UInt64 = isTimeoutError(error) ? 1_500_000_000 : 1_000_000_000
+                    try? await Task.sleep(nanoseconds: delay)
                 } else {
                     throw error
                 }
@@ -158,6 +170,12 @@ public final class DLNAController: Sendable {
         device: DLNADevice,
         onRetry: (@Sendable (_ attempt: Int, _ maxAttempts: Int, _ error: Error) -> Void)? = nil
     ) async throws {
+        // Step 1: Check if the TV is already in PLAYING state (many LG webOS TVs auto-play upon SetAVTransportURI)
+        if let state = try? await getTransportInfo(device: device), state == .playing {
+            NSLog("[DLNAController] TV is already in PLAYING state. Skipping redundant Play command.")
+            return
+        }
+
         let action = "Play"
         let body = """
         <u:Play xmlns:u="urn:schemas-upnp-org:service:AVTransport:1">
@@ -167,8 +185,22 @@ public final class DLNAController: Sendable {
         """
 
         var lastError: Error?
-        let maxAttempts = 5
+        let maxAttempts = 10
         for attempt in 1...maxAttempts {
+            // Check state before issuing Play:
+            if let state = try? await getTransportInfo(device: device) {
+                if state == .playing {
+                    NSLog("[DLNAController] TV confirmed PLAYING on check (attempt %d/%d).", attempt, maxAttempts)
+                    return
+                }
+                if state == .transitioning {
+                    NSLog("[DLNAController] TV is TRANSITIONING/buffering (attempt %d/%d). Waiting for buffer...", attempt, maxAttempts)
+                    onRetry?(attempt, maxAttempts, NSError(domain: "DLNAController", code: 701, userInfo: [NSLocalizedDescriptionKey: "Buffering stream on TV..."]))
+                    try? await Task.sleep(nanoseconds: 1_000_000_000)
+                    continue
+                }
+            }
+
             do {
                 _ = try await sendSOAP(
                     to: device.avTransportControlURL,
@@ -177,17 +209,39 @@ public final class DLNAController: Sendable {
                     body: body,
                     timeout: 10.0
                 )
+                NSLog("[DLNAController] Play command accepted on attempt %d.", attempt)
                 return
             } catch {
                 lastError = error
                 NSLog("[DLNAController] Play attempt %d/%d failed: %@", attempt, maxAttempts, error.localizedDescription)
+
+                let desc = error.localizedDescription.lowercased()
+                if desc.contains("transition not available") || desc.contains("701") {
+                    // UPnP 701 error often means TV is already transitioning to PLAYING or already playing
+                    try? await Task.sleep(nanoseconds: 600_000_000)
+                    if let state = try? await getTransportInfo(device: device), state == .playing {
+                        NSLog("[DLNAController] TV confirmed PLAYING despite 701 error. Succeeded.")
+                        return
+                    }
+                }
+
                 if attempt < maxAttempts && isRetryableError(error) {
                     onRetry?(attempt, maxAttempts, error)
-                    try? await Task.sleep(nanoseconds: 600_000_000)
+                    try? await Task.sleep(nanoseconds: 1_000_000_000)
                 } else {
+                    // Final verification check: did the TV start playing in the background?
+                    if let finalState = try? await getTransportInfo(device: device), finalState == .playing {
+                        NSLog("[DLNAController] TV is PLAYING after last attempt. Succeeded.")
+                        return
+                    }
                     throw error
                 }
             }
+        }
+
+        // Final verification check
+        if let finalState = try? await getTransportInfo(device: device), finalState == .playing {
+            return
         }
         if let err = lastError {
             throw err

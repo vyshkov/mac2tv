@@ -347,21 +347,21 @@ public final class PlaybackViewModel: ObservableObject {
                     subtitleURL: subStreamURL,
                     onRetry: { [self] attempt, maxAttempts, error in
                         Task { @MainActor [self] in
-                            self.statusMessage = "TV loading app, retrying (\(attempt + 1)/\(maxAttempts))..."
+                            self.statusMessage = "Connecting to \(device.displayName) (\(attempt + 1)/\(maxAttempts))..."
                         }
                     }
                 )
 
-                // Small delay to allow TV to buffer initial header
-                try await Task.sleep(nanoseconds: 500_000_000)
+                // Small delay to allow TV to parse metadata & initialize buffer
+                statusMessage = "Buffering stream on \(device.displayName)..."
+                try await Task.sleep(nanoseconds: 600_000_000)
 
-                // 4. Command TV to play
-                statusMessage = "Starting playback on \(device.displayName)..."
+                // 4. Command TV to play (handles LG webOS auto-play & buffering states)
                 try await dlna.play(
                     device: device,
                     onRetry: { [self] attempt, maxAttempts, error in
                         Task { @MainActor [self] in
-                            self.statusMessage = "Starting playback (\(attempt + 1)/\(maxAttempts))..."
+                            self.statusMessage = "Buffering stream on \(device.displayName)..."
                         }
                     }
                 )
