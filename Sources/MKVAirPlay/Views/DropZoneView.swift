@@ -65,35 +65,33 @@ public struct DropZoneView: View {
                     }
                     .liquidGlassCard(cornerRadius: 16, padding: 12, glow: .indigo)
                 } else {
-                    // Expanded Media Card (Flex: 1)
-                    VStack(spacing: 14) {
-                        Spacer(minLength: 8)
-
+                    // Expanded Media Card
+                    VStack(spacing: 12) {
                         ZStack {
-                            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                            RoundedRectangle(cornerRadius: 14, style: .continuous)
                                 .fill(LinearGradient(
                                     colors: [Color.indigo.opacity(0.85), Color.cyan.opacity(0.75)],
                                     startPoint: .topLeading,
                                     endPoint: .bottomTrailing
                                 ))
-                                .frame(width: 64, height: 64)
+                                .frame(width: 52, height: 52)
                                 .overlay(
-                                    RoundedRectangle(cornerRadius: 16, style: .continuous)
+                                    RoundedRectangle(cornerRadius: 14, style: .continuous)
                                         .strokeBorder(
                                             LinearGradient(colors: [.white.opacity(0.65), .white.opacity(0.2)], startPoint: .topLeading, endPoint: .bottomTrailing),
                                             lineWidth: 1.2
                                         )
                                 )
-                                .shadow(color: Color.indigo.opacity(0.35), radius: 10, x: 0, y: 4)
+                                .shadow(color: Color.indigo.opacity(0.35), radius: 8, x: 0, y: 3)
 
                             Image(systemName: "film.stack.fill")
-                                .font(.system(size: 28))
+                                .font(.system(size: 24))
                                 .foregroundColor(.white)
                         }
 
-                        VStack(spacing: 6) {
+                        VStack(spacing: 5) {
                             Text(fileURL.lastPathComponent)
-                                .font(.system(size: 15, weight: .bold, design: .rounded))
+                                .font(.system(size: 14, weight: .bold, design: .rounded))
                                 .lineLimit(2)
                                 .multilineTextAlignment(.center)
                                 .padding(.horizontal, 16)
@@ -117,26 +115,23 @@ public struct DropZoneView: View {
                                     .font(.system(size: 12, weight: .medium, design: .rounded))
                             }
                             .padding(.horizontal, 14)
-                            .padding(.vertical, 7)
+                            .padding(.vertical, 6)
                         }
                         .buttonStyle(LiquidGlassButtonStyle(isProminent: false))
                         .disabled(viewModel.isConnecting)
-
-                        Spacer(minLength: 8)
                     }
-                    .frame(maxWidth: .infinity, minHeight: 160, maxHeight: .infinity)
-                    .liquidGlassCard(cornerRadius: 18, padding: 14, glow: .indigo)
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 14)
+                    .liquidGlassCard(cornerRadius: 18, padding: 12, glow: .indigo)
                 }
             } else {
-                // Empty Drop Target (Frosted Glass Container, Flex: 1)
+                // Empty Drop Target (Frosted Glass Container)
                 Button(action: openFilePicker) {
-                    VStack(spacing: 14) {
-                        Spacer(minLength: 10)
-
+                    VStack(spacing: 12) {
                         ZStack {
                             Circle()
                                 .fill(viewModel.isDropTargeted ? Color.cyan.opacity(0.25) : Color.primary.opacity(0.04))
-                                .frame(width: 68, height: 68)
+                                .frame(width: 58, height: 58)
                                 .overlay(
                                     Circle()
                                         .strokeBorder(
@@ -147,13 +142,13 @@ public struct DropZoneView: View {
                                                 startPoint: .topLeading,
                                                 endPoint: .bottomTrailing
                                             ),
-                                             lineWidth: 1.2
+                                            lineWidth: 1.2
                                         )
                                 )
                                 .shadow(color: viewModel.isDropTargeted ? Color.cyan.opacity(0.4) : Color.clear, radius: 12)
 
                             Image(systemName: viewModel.isDropTargeted ? "arrow.down.circle.fill" : "play.rectangle.on.rectangle")
-                                .font(.system(size: 28, weight: .medium))
+                                .font(.system(size: 26, weight: .medium))
                                 .foregroundColor(viewModel.isDropTargeted ? .cyan : .primary.opacity(0.75))
                                 .scaleEffect(viewModel.isDropTargeted ? 1.15 : 1.0)
                                 .animation(.spring(response: 0.35, dampingFraction: 0.65), value: viewModel.isDropTargeted)
@@ -161,21 +156,20 @@ public struct DropZoneView: View {
 
                         VStack(spacing: 4) {
                             Text("Drag & Drop MKV or Video File")
-                                .font(.system(size: 15, weight: .semibold, design: .rounded))
+                                .font(.system(size: 14, weight: .semibold, design: .rounded))
                                 .foregroundColor(.primary)
 
                             Text("or click to browse from your Mac")
-                                .font(.system(size: 12))
+                                .font(.system(size: 11))
                                 .foregroundColor(.secondary)
                         }
 
                         Text("Supports MKV, MP4, MOV, WebM, AVI")
                             .font(.system(size: 10, design: .monospaced))
                             .foregroundColor(.secondary.opacity(0.7))
-
-                        Spacer(minLength: 10)
                     }
-                    .frame(maxWidth: .infinity, minHeight: 180, maxHeight: .infinity)
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 20)
                     .background(
                         ZStack {
                             RoundedRectangle(cornerRadius: 18, style: .continuous)
@@ -206,10 +200,9 @@ public struct DropZoneView: View {
                 }
                 .buttonStyle(.plain)
                 .disabled(viewModel.isConnecting)
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
         }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .frame(maxWidth: .infinity)
         .onDrop(of: [.fileURL], isTargeted: $viewModel.isDropTargeted) { providers in
             guard !viewModel.isConnecting else { return false }
             guard let provider = providers.first else { return false }

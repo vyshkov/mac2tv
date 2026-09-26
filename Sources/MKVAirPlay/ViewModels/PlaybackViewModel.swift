@@ -1,6 +1,8 @@
 import Foundation
 import SwiftUI
 import Combine
+import UniformTypeIdentifiers
+import AppKit
 
 @MainActor
 public final class PlaybackViewModel: ObservableObject {
@@ -55,6 +57,8 @@ public final class PlaybackViewModel: ObservableObject {
             updateSleepPrevention()
         }
     }
+
+    @Published public var windowContentHeight: CGFloat = 430
 
     @Published public var isBatteryLidSleepAuthorized: Bool = SleepManager.checkBatteryAuthorization()
     @Published public var isOnBattery: Bool = SleepManager.getPowerStatus().isOnBattery
@@ -298,6 +302,24 @@ public final class PlaybackViewModel: ObservableObject {
             availableSubtitles.append(track)
         }
         selectSubtitle(track)
+    }
+
+    public func promptExternalSubtitleFile() {
+        guard !isConnecting else { return }
+        let panel = NSOpenPanel()
+        panel.canChooseFiles = true
+        panel.canChooseDirectories = false
+        panel.allowsMultipleSelection = false
+        panel.allowedContentTypes = [
+            UTType(filenameExtension: "srt") ?? .plainText,
+            UTType(filenameExtension: "vtt") ?? .plainText,
+            .plainText
+        ]
+        panel.prompt = "Select Subtitles"
+
+        if panel.runModal() == .OK, let url = panel.url {
+            loadExternalSubtitleFile(url: url)
+        }
     }
 
     // MARK: - Streaming

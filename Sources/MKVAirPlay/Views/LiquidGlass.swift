@@ -155,21 +155,49 @@ public struct LiquidGlassButtonStyle: ButtonStyle {
             .background(
                 Group {
                     if isProminent {
-                        ZStack {
-                            LinearGradient(
-                                colors: isBuffering ?
-                                    [Color(red: 0.08, green: 0.46, blue: 0.90), Color(red: 0.24, green: 0.28, blue: 0.84)] :
-                                    [Color(red: 0.12, green: 0.58, blue: 1.0), Color(red: 0.35, green: 0.32, blue: 0.96)],
-                                startPoint: .topLeading,
-                                endPoint: .bottomTrailing
-                            )
+                        if isBuffering {
+                            // Busy / Buffering State (Frosted Graphite Glass with soft cyan inner pulse)
+                            ZStack {
+                                RoundedRectangle(cornerRadius: 14, style: .continuous)
+                                    .fill(.ultraThinMaterial)
 
-                            // Specular top light reflex
-                            LinearGradient(
-                                colors: [Color.white.opacity(0.35), Color.clear],
-                                startPoint: .top,
-                                endPoint: .bottom
-                            )
+                                RoundedRectangle(cornerRadius: 14, style: .continuous)
+                                    .fill(
+                                        LinearGradient(
+                                            colors: [
+                                                Color(red: 0.16, green: 0.18, blue: 0.24).opacity(0.92),
+                                                Color(red: 0.10, green: 0.12, blue: 0.17).opacity(0.96)
+                                            ],
+                                            startPoint: .topLeading,
+                                            endPoint: .bottomTrailing
+                                        )
+                                    )
+
+                                RoundedRectangle(cornerRadius: 14, style: .continuous)
+                                    .fill(
+                                        LinearGradient(
+                                            colors: [Color.cyan.opacity(0.12), Color.blue.opacity(0.04)],
+                                            startPoint: .topLeading,
+                                            endPoint: .bottomTrailing
+                                        )
+                                    )
+                            }
+                        } else {
+                            // Normal Prominent Active State (Vibrant Cyan-Blue Gradient)
+                            ZStack {
+                                LinearGradient(
+                                    colors: [Color(red: 0.12, green: 0.58, blue: 1.0), Color(red: 0.35, green: 0.32, blue: 0.96)],
+                                    startPoint: .topLeading,
+                                    endPoint: .bottomTrailing
+                                )
+
+                                // Specular top light reflex
+                                LinearGradient(
+                                    colors: [Color.white.opacity(0.35), Color.clear],
+                                    startPoint: .top,
+                                    endPoint: .bottom
+                                )
+                            }
                         }
                     } else {
                         ZStack {
@@ -180,14 +208,16 @@ public struct LiquidGlassButtonStyle: ButtonStyle {
                     }
                 }
             )
-            .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+            .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
             .overlay(
-                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                RoundedRectangle(cornerRadius: 14, style: .continuous)
                     .strokeBorder(
                         LinearGradient(
-                            colors: isProminent ?
-                                [.white.opacity(0.60), .white.opacity(0.20)] :
-                                [.white.opacity(0.40), .white.opacity(0.10)],
+                            colors: isBuffering ?
+                                [Color.cyan.opacity(0.40), Color.white.opacity(0.10)] :
+                                (isProminent ?
+                                    [Color.white.opacity(0.60), Color.white.opacity(0.20)] :
+                                    [Color.white.opacity(0.40), Color.white.opacity(0.10)]),
                             startPoint: .topLeading,
                             endPoint: .bottomTrailing
                         ),
@@ -195,13 +225,58 @@ public struct LiquidGlassButtonStyle: ButtonStyle {
                     )
             )
             .shadow(
-                color: isBuffering ? Color.cyan.opacity(0.55) : (isProminent ? tint.opacity(0.35) : Color.black.opacity(0.06)),
-                radius: isBuffering ? 14 : (configuration.isPressed ? 4 : 10),
+                color: isBuffering ? Color.black.opacity(0.25) : (isProminent ? tint.opacity(0.35) : Color.black.opacity(0.06)),
+                radius: isBuffering ? 6 : (configuration.isPressed ? 4 : 10),
                 x: 0,
-                y: configuration.isPressed ? 1 : 4
+                y: isBuffering ? 2 : (configuration.isPressed ? 1 : 4)
             )
-            .scaleEffect(configuration.isPressed ? 0.985 : 1.0)
+            .scaleEffect(isBuffering ? 0.995 : (configuration.isPressed ? 0.985 : 1.0))
+            .animation(.easeInOut(duration: 0.25), value: isBuffering)
             .animation(.easeOut(duration: 0.15), value: configuration.isPressed)
+    }
+}
+
+// MARK: - Native AppKit Operation Not Allowed Cursor
+final class OperationNotAllowedCursorView: NSView {
+    var isActive: Bool = false {
+        didSet {
+            if oldValue != isActive {
+                window?.invalidateCursorRects(for: self)
+            }
+        }
+    }
+
+    override func resetCursorRects() {
+        super.resetCursorRects()
+        if isActive {
+            addCursorRect(bounds, cursor: .operationNotAllowed)
+        }
+    }
+
+    override func hitTest(_ point: NSPoint) -> NSView? {
+        return isActive ? self : nil
+    }
+}
+
+struct OperationNotAllowedCursorRepresentable: NSViewRepresentable {
+    let isActive: Bool
+
+    func makeNSView(context: Context) -> OperationNotAllowedCursorView {
+        let view = OperationNotAllowedCursorView()
+        view.isActive = isActive
+        return view
+    }
+
+    func updateNSView(_ nsView: OperationNotAllowedCursorView, context: Context) {
+        nsView.isActive = isActive
+    }
+}
+
+public extension View {
+    func operationNotAllowedCursor(isActive: Bool) -> some View {
+        self.overlay(
+            OperationNotAllowedCursorRepresentable(isActive: isActive)
+        )
     }
 }
 

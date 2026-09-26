@@ -17,12 +17,13 @@ public struct PlaybackControlsView: View {
                     HStack(spacing: 10) {
                         if viewModel.isConnecting {
                             ProgressView()
-                                .progressViewStyle(CircularProgressViewStyle(tint: .white))
+                                .progressViewStyle(CircularProgressViewStyle(tint: .cyan))
                                 .scaleEffect(0.85)
                                 .frame(width: 18, height: 18)
 
                             Text(viewModel.statusMessage)
-                                .font(.system(size: 15, weight: .bold, design: .rounded))
+                                .font(.system(size: 14, weight: .bold, design: .rounded))
+                                .foregroundColor(.white.opacity(0.88))
                                 .lineLimit(1)
                                 .minimumScaleFactor(0.8)
                         } else {
@@ -38,10 +39,11 @@ public struct PlaybackControlsView: View {
                     .bufferingShimmer(isActive: viewModel.isConnecting)
                 }
                 .buttonStyle(LiquidGlassButtonStyle(isProminent: true, tint: .cyan, isBuffering: viewModel.isConnecting))
+                .operationNotAllowedCursor(isActive: viewModel.isConnecting)
                 .disabled(viewModel.selectedFileURL == nil || viewModel.selectedDevice == nil || viewModel.isConnecting)
                 .opacity(viewModel.selectedFileURL == nil || viewModel.selectedDevice == nil ? 0.5 : 1.0)
                 .animation(.easeInOut(duration: 0.25), value: viewModel.isConnecting)
-                .help(viewModel.selectedFileURL == nil ? "Select a video file first" : (viewModel.selectedDevice == nil ? "Select a TV device" : (viewModel.isConnecting ? "Buffering stream..." : "Stream to TV")))
+                .help(viewModel.isConnecting ? "Buffering stream... Please wait" : (viewModel.selectedFileURL == nil ? "Select a video file first" : (viewModel.selectedDevice == nil ? "Select a TV device" : "Stream to TV")))
             } else {
                 // Active Playback Controls Deck (Liquid Glass)
                 VStack(spacing: 16) {
@@ -55,15 +57,60 @@ public struct PlaybackControlsView: View {
 
                         Spacer()
 
-                        if let target = viewModel.selectedDevice {
-                            HStack(spacing: 5) {
-                                Image(systemName: "tv")
-                                    .font(.system(size: 10))
-                                Text(target.displayName)
-                                    .font(.system(size: 11, weight: .medium, design: .rounded))
+                        // Subtitle Dropdown Menu (Replacing redundant TV name)
+                        Menu {
+                            ForEach(viewModel.availableSubtitles) { track in
+                                Button(action: {
+                                    viewModel.selectSubtitle(track)
+                                }) {
+                                    HStack {
+                                        Text(track.displayName)
+                                        if viewModel.selectedSubtitle.id == track.id {
+                                            Image(systemName: "checkmark")
+                                        }
+                                    }
+                                }
                             }
-                            .foregroundColor(.secondary)
+
+                            Divider()
+
+                            Button(action: {
+                                viewModel.promptExternalSubtitleFile()
+                            }) {
+                                Label("Load External Subtitle (.srt, .vtt)...", systemImage: "plus.circle")
+                            }
+                        } label: {
+                            HStack(spacing: 6) {
+                                Image(systemName: viewModel.selectedSubtitle.isOff ? "captions.bubble" : "captions.bubble.fill")
+                                    .font(.system(size: 11))
+                                Text(viewModel.selectedSubtitle.isOff ? "Subtitles: Off" : viewModel.selectedSubtitle.displayName)
+                                    .font(.system(size: 11, weight: .medium, design: .rounded))
+                                    .lineLimit(1)
+                                Image(systemName: "chevron.up.chevron.down")
+                                    .font(.system(size: 8, weight: .bold))
+                                    .foregroundColor(.secondary)
+                            }
+                            .padding(.horizontal, 9)
+                            .padding(.vertical, 4.5)
+                            .background(
+                                Capsule()
+                                    .fill(viewModel.selectedSubtitle.isOff ? Color.white.opacity(0.06) : Color.cyan.opacity(0.18))
+                            )
+                            .overlay(
+                                Capsule()
+                                    .strokeBorder(
+                                        viewModel.selectedSubtitle.isOff ?
+                                            LinearGradient(colors: [.white.opacity(0.2), .white.opacity(0.05)], startPoint: .topLeading, endPoint: .bottomTrailing) :
+                                            LinearGradient(colors: [Color.cyan.opacity(0.6), Color.cyan.opacity(0.2)], startPoint: .topLeading, endPoint: .bottomTrailing),
+                                        lineWidth: 0.8
+                                    )
+                            )
+                            .foregroundColor(viewModel.selectedSubtitle.isOff ? .secondary : .cyan)
                         }
+                        .menuStyle(.borderlessButton)
+                        .fixedSize()
+                        .disabled(viewModel.isConnecting)
+                        .help("Select subtitle track")
                     }
 
                     // Scrubber Bar

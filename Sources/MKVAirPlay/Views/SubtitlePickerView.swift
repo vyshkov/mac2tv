@@ -57,7 +57,9 @@ public struct SubtitlePickerView: View {
 
                         Divider()
 
-                        Button(action: openSubtitleFilePicker) {
+                        Button(action: {
+                            viewModel.promptExternalSubtitleFile()
+                        }) {
                             Label("Load External Subtitle (.srt, .vtt)...", systemImage: "plus.circle")
                         }
                     } label: {
@@ -85,23 +87,5 @@ public struct SubtitlePickerView: View {
             }
         }
         .liquidGlassCard(cornerRadius: 16, padding: 12)
-    }
-
-    private func openSubtitleFilePicker() {
-        guard !viewModel.isConnecting else { return }
-        let panel = NSOpenPanel()
-        panel.canChooseFiles = true
-        panel.canChooseDirectories = false
-        panel.allowsMultipleSelection = false
-        panel.allowedContentTypes = [
-            UTType(filenameExtension: "srt") ?? .plainText,
-            UTType(filenameExtension: "vtt") ?? .plainText,
-            .plainText
-        ]
-        panel.prompt = "Select Subtitles"
-
-        if panel.runModal() == .OK, let url = panel.url {
-            viewModel.loadExternalSubtitleFile(url: url)
-        }
     }
 }

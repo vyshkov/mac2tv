@@ -14,9 +14,8 @@ struct MKVAirPlayApp: App {
                     appDelegate.handleOpenFile(url: url)
                 }
         }
-        .windowStyle(.hiddenTitleBar)
-        .windowResizability(.contentMinSize)
-        .defaultSize(width: 540, height: 720)
+        .windowResizability(.contentSize)
+        .defaultSize(width: 520, height: 430)
         .handlesExternalEvents(matching: ["*"])
         .commands {
             CommandGroup(replacing: .newItem) { }
@@ -66,10 +65,18 @@ struct MKVAirPlayApp: App {
 
 @MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMenuDelegate {
+    static private(set) var shared: AppDelegate?
     private var statusItem: NSStatusItem?
     private weak var mainWindow: NSWindow?
     private var cancellables = Set<AnyCancellable>()
     private var isQuitting = false
+    private var currentContentHeight: CGFloat = 0
+    private var isProgrammaticResize = false
+
+    override init() {
+        super.init()
+        AppDelegate.shared = self
+    }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.regular)
@@ -81,7 +88,97 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
         handleCommandLineArguments()
     }
 
+    func configureWindow(_ window: NSWindow) {
+        self.mainWindow = window
+        window.delegate = self
+        window.isReleasedWhenClosed = false
+        window.isOpaque = false
+        window.backgroundColor = .clear
+
+        var mask = window.styleMask
+        mask.insert([.titled, .closable, .miniaturizable, .fullSizeContentView])
+        mask.remove(.resizable)
+        window.styleMask = mask
+
+        window.titlebarAppearsTransparent = true
+        window.titleVisibility = .hidden
+        window.titlebarSeparatorStyle = .none
+
+        window.showsResizeIndicator = false
+        window.collectionBehavior.insert(.fullScreenNone)
+        window.isMovableByWindowBackground = true
+        window.setFrameAutosaveName("")
+
+        // Ensure standard window control buttons (close, minimize) are explicitly visible & enabled
+        window.standardWindowButton(.closeButton)?.isHidden = false
+        window.standardWindowButton(.closeButton)?.isEnabled = true
+        window.standardWindowButton(.miniaturizeButton)?.isHidden = false
+        window.standardWindowButton(.miniaturizeButton)?.isEnabled = true
+        window.standardWindowButton(.zoomButton)?.isHidden = true
+        window.standardWindowButton(.zoomButton)?.isEnabled = false
+
+        bringTitlebarToFront(in: window)
+
+        let targetWidth: CGFloat = 520
+        let targetHeight: CGFloat = currentContentHeight > 100 ? currentContentHeight : 430
+        window.minSize = NSSize(width: targetWidth, height: targetHeight)
+        window.maxSize = NSSize(width: targetWidth, height: targetHeight)
+    }
+
+    private func bringTitlebarToFront(in window: NSWindow) {
+        window.titlebarSeparatorStyle = .none
+        guard let titlebarContainer = window.standardWindowButton(.closeButton)?.superview?.superview,
+              let themeFrame = titlebarContainer.superview else { return }
+
+        if themeFrame.subviews.last !== titlebarContainer {
+            themeFrame.addSubview(titlebarContainer, positioned: .above, relativeTo: nil)
+        }
+        titlebarContainer.layer?.zPosition = 1000
+        titlebarContainer.isHidden = false
+        window.standardWindowButton(.closeButton)?.isHidden = false
+        window.standardWindowButton(.closeButton)?.isEnabled = true
+        window.standardWindowButton(.miniaturizeButton)?.isHidden = false
+        window.standardWindowButton(.miniaturizeButton)?.isEnabled = true
+        window.standardWindowButton(.zoomButton)?.isHidden = true
+        window.standardWindowButton(.zoomButton)?.isEnabled = false
+
+        makeTitlebarTransparent(titlebarContainer)
+    }
+
+    private func makeTitlebarTransparent(_ container: NSView) {
+        container.wantsLayer = true
+        container.layer?.backgroundColor = NSColor.clear.cgColor
+
+        func sanitize(_ view: NSView) {
+            let className = NSStringFromClass(type(of: view))
+            let layerClass = view.layer.map { NSStringFromClass(type(of: $0)) } ?? ""
+            if className.contains("Background") || className.contains("Decoration") || layerClass.contains("Backdrop") || className.contains("VisualEffect") {
+                view.isHidden = true
+                view.alphaValue = 0
+            } else {
+                view.wantsLayer = true
+                view.layer?.backgroundColor = NSColor.clear.cgColor
+            }
+
+            for subview in view.subviews {
+                let subClass = NSStringFromClass(type(of: subview))
+                if subClass.contains("Close") || subClass.contains("ThemeWidget") {
+                    subview.isHidden = false
+                    subview.alphaValue = 1.0
+                } else {
+                    sanitize(subview)
+                }
+            }
+        }
+
+        sanitize(container)
+    }
+
     private func setupWindow() {
+        // Clear any old saved frames from UserDefaults so macOS doesn't restore stale sizes
+        UserDefaults.standard.removeObject(forKey: "NSWindow Frame main")
+        UserDefaults.standard.removeObject(forKey: "NSWindow Frame MKVAirPlay")
+
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) { [weak self] in
             guard let self = self else { return }
             var assignedMain = false
@@ -91,31 +188,82 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
 
                 if !assignedMain {
                     assignedMain = true
-                    self.mainWindow = window
-                    window.delegate = self
-                    window.isReleasedWhenClosed = false
-                    window.isOpaque = false
-                    window.backgroundColor = .clear
-                    window.titlebarAppearsTransparent = true
-                    window.titleVisibility = .hidden
-                    window.styleMask.insert(.fullSizeContentView)
-                    window.isMovableByWindowBackground = true
-                    window.minSize = NSSize(width: 500, height: 680)
+                    self.configureWindow(window)
 
-                    let frame = window.frame
-                    if frame.size.height < 680 || frame.size.width < 500 {
-                        let newWidth = max(540, frame.size.width)
-                        let newHeight = max(720, frame.size.height)
-                        var newFrame = frame
-                        newFrame.origin.y -= (newHeight - frame.size.height)
-                        newFrame.size = NSSize(width: newWidth, height: newHeight)
-                        window.setFrame(newFrame, display: true, animate: true)
+                    if self.currentContentHeight > 100 {
+                        self.updateWindowHeight(self.currentContentHeight)
+                    } else {
+                        let targetWidth: CGFloat = 520
+                        let targetHeight: CGFloat = 430
+                        var frame = window.frame
+                        frame.size = NSSize(width: targetWidth, height: targetHeight)
+                        self.isProgrammaticResize = true
+                        window.setFrame(frame, display: true, animate: false)
+                        self.isProgrammaticResize = false
                     }
                 } else {
                     window.close()
                 }
             }
         }
+    }
+
+    func updateWindowHeight(_ contentHeight: CGFloat) {
+        guard let window = mainWindow ?? NSApp.windows.first(where: { !$0.className.contains("StatusBar") && $0.canBecomeMain }) else { return }
+        self.mainWindow = window
+        configureWindow(window)
+
+        let targetHeight = ceil(contentHeight)
+        guard targetHeight > 100 else { return }
+
+        currentContentHeight = targetHeight
+        let targetWidth: CGFloat = 520
+
+        window.minSize = NSSize(width: targetWidth, height: targetHeight)
+        window.maxSize = NSSize(width: targetWidth, height: targetHeight)
+
+        let currentFrame = window.frame
+        if abs(currentFrame.size.height - targetHeight) > 1 || abs(currentFrame.size.width - targetWidth) > 1 {
+            var newFrame = currentFrame
+            let heightDiff = targetHeight - currentFrame.size.height
+            // Keep top-left anchored in screen coordinates
+            newFrame.origin.y -= heightDiff
+            newFrame.size = NSSize(width: targetWidth, height: targetHeight)
+
+            // Constrain within visible screen bounds
+            if let screen = window.screen ?? NSScreen.main {
+                let visibleFrame = screen.visibleFrame
+                if newFrame.origin.y < visibleFrame.minY {
+                    newFrame.origin.y = visibleFrame.minY
+                }
+                if newFrame.maxY > visibleFrame.maxY {
+                    newFrame.origin.y = visibleFrame.maxY - newFrame.height
+                }
+            }
+
+            isProgrammaticResize = true
+            window.setFrame(newFrame, display: true, animate: window.isVisible)
+            isProgrammaticResize = false
+        }
+    }
+
+    // MARK: - NSWindowDelegate (Disallow Manual Resizing Completely)
+    func windowDidUpdate(_ notification: Notification) {
+        guard let window = notification.object as? NSWindow, window === mainWindow else { return }
+        bringTitlebarToFront(in: window)
+    }
+
+    func windowWillResize(_ sender: NSWindow, to frameSize: NSSize) -> NSSize {
+        if isProgrammaticResize {
+            return frameSize
+        }
+        // Force the window to remain at 520 width and current content height
+        let targetHeight = currentContentHeight > 100 ? currentContentHeight : sender.frame.size.height
+        return NSSize(width: 520, height: targetHeight)
+    }
+
+    func windowShouldZoom(_ window: NSWindow, toFrame newFrame: NSRect) -> Bool {
+        return false
     }
 
     private func setupStatusItem() {
@@ -136,11 +284,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
         PlaybackViewModel.shared.$isStreaming
             .receive(on: DispatchQueue.main)
             .sink { [weak self] isStreaming in
-                guard let self = self, let button = self.statusItem?.button else { return }
-                let iconName = isStreaming ? "play.tv.fill" : "play.tv"
-                let img = NSImage(systemSymbolName: iconName, accessibilityDescription: "MKVAirPlay")
-                img?.isTemplate = true
-                button.image = img
+                guard let self = self else { return }
+                if let button = self.statusItem?.button {
+                    let iconName = isStreaming ? "play.tv.fill" : "play.tv"
+                    let img = NSImage(systemSymbolName: iconName, accessibilityDescription: "MKVAirPlay")
+                    img?.isTemplate = true
+                    button.image = img
+                }
             }
             .store(in: &cancellables)
     }
@@ -338,8 +488,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
         if window.isMiniaturized {
             window.deminiaturize(nil)
         }
-        window.makeKeyAndOrderFront(nil)
         NSApp.activate(ignoringOtherApps: true)
+
+        if currentContentHeight > 100 {
+            updateWindowHeight(currentContentHeight)
+        }
 
         DispatchQueue.main.async {
             window.makeKeyAndOrderFront(nil)
