@@ -324,6 +324,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
         SleepManager.shared.disableSleepPrevention()
         SleepManager.shared.restoreDefaultSleep()
         LocalStreamingServer.shared.stop()
+        AudioHelper.cleanupTempFiles()
     }
 
     // MARK: - Open With / File Handling

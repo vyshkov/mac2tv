@@ -142,7 +142,10 @@ public enum SubtitleHelper {
         let tempURL = outputURL.appendingPathExtension("tmp")
         let task = Process()
         task.executableURL = URL(fileURLWithPath: ffmpegPath)
+        task.standardInput = FileHandle.nullDevice
+        task.standardOutput = FileHandle.nullDevice
         task.arguments = [
+            "-nostdin",
             "-y",
             "-i", videoURL.path,
             "-map", "0:\(streamIndex)",

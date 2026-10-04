@@ -48,6 +48,11 @@ public final class LocalStreamingServer: @unchecked Sendable {
         NSLog("[LocalStreamingServer] Active subtitle set to: %@", path ?? "None")
     }
 
+    public func setMediaFile(path: String) {
+        self.activeFilePath = path
+        NSLog("[LocalStreamingServer] Active media file set to: %@", path)
+    }
+
     private init() {}
 
     public func start(filePath: String, preferredPort: UInt16 = 8089) throws -> URL {

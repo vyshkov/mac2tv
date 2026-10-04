@@ -50,6 +50,9 @@ public final class PlaybackViewModel: ObservableObject {
     @Published public var availableSubtitles: [SubtitleTrack] = [SubtitleTrack.off]
     @Published public var selectedSubtitle: SubtitleTrack = SubtitleTrack.off
 
+    @Published public var availableAudioTracks: [AudioTrack] = []
+    @Published public var selectedAudioTrack: AudioTrack?
+
     @Published public var preventSleepOnLidClose: Bool = (UserDefaults.standard.object(forKey: "preventSleepOnLidClose") as? Bool) ?? false {
         didSet {
             UserDefaults.standard.set(preventSleepOnLidClose, forKey: "preventSleepOnLidClose")
@@ -79,6 +82,7 @@ public final class PlaybackViewModel: ObservableObject {
     private var cancellables = Set<AnyCancellable>()
     private var pollTimer: Timer?
     private var subtitleSwitchTask: Task<Void, Never>?
+    private var audioSwitchTask: Task<Void, Never>?
     private var hasStartedPlaying: Bool = false
     private var consecutivePollErrors: Int = 0
     private let discovery = SSDPDiscovery.shared
@@ -155,16 +159,32 @@ public final class PlaybackViewModel: ObservableObject {
         isConnecting = false
         statusMessage = "Ready to stream \"\(selectedFileName)\""
 
+        // Clean up any old temp audio remux files
+        AudioHelper.cleanupTempFiles()
+
         // Reset and probe for subtitles (embedded & external)
         availableSubtitles = [SubtitleTrack.off]
         selectedSubtitle = SubtitleTrack.off
 
+        // Reset and probe for audio tracks
+        availableAudioTracks = []
+        selectedAudioTrack = nil
+
         Task {
-            let tracks = await SubtitleHelper.probeSubtitleTracks(for: standardized)
-            self.availableSubtitles = tracks
-            // Default to first subtitle if available, or keep Off
-            if let firstTrack = tracks.first(where: { !$0.isOff }) {
+            async let subTracks = SubtitleHelper.probeSubtitleTracks(for: standardized)
+            async let audioTracks = AudioHelper.probeAudioTracks(for: standardized)
+
+            let (subs, audios) = await (subTracks, audioTracks)
+            self.availableSubtitles = subs
+            self.availableAudioTracks = audios
+
+            if let firstTrack = subs.first(where: { !$0.isOff }) {
                 NSLog("[PlaybackViewModel] Found subtitle: %@", firstTrack.displayName)
+            }
+
+            if let defaultAudio = audios.first(where: { $0.isDefault }) ?? audios.first {
+                self.selectedAudioTrack = defaultAudio
+                NSLog("[PlaybackViewModel] Selected default audio track: %@", defaultAudio.displayName)
             }
         }
     }
@@ -322,6 +342,152 @@ public final class PlaybackViewModel: ObservableObject {
         }
     }
 
+    // MARK: - Audio Tracks Management
+    public func selectAudioTrack(_ track: AudioTrack) {
+        selectedAudioTrack = track
+        guard let fileURL = selectedFileURL else { return }
+
+        // If not currently streaming, user selection will be applied when starting stream
+        guard isStreaming, let device = selectedDevice else { return }
+
+        audioSwitchTask?.cancel()
+        audioSwitchTask = Task { @MainActor [weak self] in
+            guard let self = self else { return }
+            do {
+                self.stopPolling()
+                let resumeTime = self.currentTime
+                self.lastSeekTime = Date()
+
+                if !AudioHelper.isDefaultOrFirstTrack(track, in: self.availableAudioTracks) {
+                    self.statusMessage = "Preparing audio: \(track.displayName)..."
+                } else {
+                    self.statusMessage = "Switching audio to \(track.displayName)..."
+                }
+
+                let mediaStreamURL = try await AudioHelper.prepareAudioStream(selectedTrack: track, for: fileURL, allTracks: self.availableAudioTracks)
+                guard !Task.isCancelled else { return }
+
+                self.server.setMediaFile(path: mediaStreamURL.path)
+
+                let safeTrackId = track.id
+                    .replacingOccurrences(of: "/", with: "_")
+                    .replacingOccurrences(of: " ", with: "_")
+                    .replacingOccurrences(of: "&", with: "_")
+                    .replacingOccurrences(of: "?", with: "_")
+                let version = "\(Int(Date().timeIntervalSince1970))_audio_\(safeTrackId)"
+                let streamURL = self.server.streamURL(version: version)
+                let subStreamURL = self.selectedSubtitle.isOff ? nil : self.server.subtitleURL(forTrack: self.selectedSubtitle, version: version)
+                self.activeStreamURL = streamURL.absoluteString
+
+                NSLog("[PlaybackViewModel] Switching audio stream to: %@, sub: %@", streamURL.absoluteString, subStreamURL?.absoluteString ?? "nil")
+
+                // 1. Command TV to cleanly stop
+                try? await self.dlna.stop(device: device)
+                try? await Task.sleep(nanoseconds: 200_000_000)
+
+                guard !Task.isCancelled else { return }
+
+                // 2. Disconnect existing TCP connection
+                self.server.closeActiveConnections()
+
+                // 3. Update AVTransportURI with new stream & subtitles
+                try await self.dlna.setAVTransportURI(
+                    device: device,
+                    mediaURL: streamURL,
+                    title: fileURL.deletingPathExtension().lastPathComponent,
+                    subtitleURL: subStreamURL
+                )
+
+                guard !Task.isCancelled else { return }
+
+                try await Task.sleep(nanoseconds: 300_000_000)
+
+                guard !Task.isCancelled else { return }
+
+                // 4. Command TV to play
+                try await self.dlna.play(device: device)
+
+                guard !Task.isCancelled else { return }
+
+                // 5. Restore subtitle display if active
+                if !self.selectedSubtitle.isOff {
+                    await self.dlna.setSubtitleDisplay(device: device, enabled: true)
+                }
+
+                // Brief settling time for video decoder
+                try? await Task.sleep(nanoseconds: 400_000_000)
+
+                guard !Task.isCancelled else { return }
+
+                // 6. Seek back to previous position
+                if resumeTime > 1 {
+                    try await self.dlna.seek(device: device, toSeconds: resumeTime)
+                    self.lastSeekTime = Date()
+
+                    if !self.selectedSubtitle.isOff {
+                        try? await Task.sleep(nanoseconds: 200_000_000)
+                        await self.dlna.setSubtitleDisplay(device: device, enabled: true)
+                    }
+                }
+
+                self.statusMessage = "Audio: \(track.displayName)"
+                self.startPolling(device: device)
+            } catch {
+                if !Task.isCancelled {
+                    NSLog("[PlaybackViewModel] Failed to update audio track: %@", error.localizedDescription)
+                    self.errorMessage = "Failed to update audio track: \(error.localizedDescription)"
+                    if self.isStreaming, let device = self.selectedDevice {
+                        self.startPolling(device: device)
+                    }
+                }
+            }
+        }
+    }
+
+    public func loadExternalAudioFile(url: URL) {
+        let ext = url.pathExtension.lowercased()
+        let track = AudioTrack(
+            id: "manual_\(url.path)",
+            title: url.deletingPathExtension().lastPathComponent,
+            language: ext.uppercased(),
+            streamIndex: nil,
+            codec: ext,
+            channels: nil,
+            channelLayout: nil,
+            isDefault: false,
+            externalURL: url
+        )
+        if !availableAudioTracks.contains(where: { $0.id == track.id }) {
+            availableAudioTracks.append(track)
+        }
+        selectAudioTrack(track)
+    }
+
+    public func promptExternalAudioFile() {
+        guard !isConnecting else { return }
+        let panel = NSOpenPanel()
+        panel.canChooseFiles = true
+        panel.canChooseDirectories = false
+        panel.allowsMultipleSelection = false
+        panel.allowedContentTypes = [
+            UTType(filenameExtension: "m4a") ?? .audio,
+            UTType(filenameExtension: "mp3") ?? .audio,
+            UTType(filenameExtension: "aac") ?? .audio,
+            UTType(filenameExtension: "ac3") ?? .audio,
+            UTType(filenameExtension: "eac3") ?? .audio,
+            UTType(filenameExtension: "dts") ?? .audio,
+            UTType(filenameExtension: "flac") ?? .audio,
+            UTType(filenameExtension: "wav") ?? .audio,
+            UTType(filenameExtension: "mka") ?? .audio,
+            .audio
+        ]
+        panel.prompt = "Select Audio Track"
+
+        if panel.runModal() == .OK, let url = panel.url {
+            loadExternalAudioFile(url: url)
+        }
+    }
+
     // MARK: - Streaming
     public func startStreaming() {
         guard !isConnecting && !isStreaming else { return }
@@ -348,8 +514,18 @@ public final class PlaybackViewModel: ObservableObject {
                 let subFileURL = try await SubtitleHelper.prepareSubtitleFile(track: selectedSubtitle, for: fileURL)
                 server.setSubtitleFile(path: subFileURL?.path)
 
+                // 1b. Prepare audio stream if alternate track selected
+                var mediaStreamPath = fileURL.path
+                if let audioTrack = selectedAudioTrack {
+                    if !AudioHelper.isDefaultOrFirstTrack(audioTrack, in: availableAudioTracks) {
+                        statusMessage = "Preparing audio track: \(audioTrack.displayName)..."
+                    }
+                    let preparedMediaURL = try await AudioHelper.prepareAudioStream(selectedTrack: audioTrack, for: fileURL, allTracks: availableAudioTracks)
+                    mediaStreamPath = preparedMediaURL.path
+                }
+
                 // 2. Start local byte-range HTTP server
-                _ = try server.start(filePath: fileURL.path)
+                _ = try server.start(filePath: mediaStreamPath)
                 let safeTrackId = selectedSubtitle.isOff ? "off" : selectedSubtitle.id
                     .replacingOccurrences(of: "/", with: "_")
                     .replacingOccurrences(of: " ", with: "_")
@@ -460,6 +636,8 @@ public final class PlaybackViewModel: ObservableObject {
     private func finishStop(message: String? = nil) {
         subtitleSwitchTask?.cancel()
         subtitleSwitchTask = nil
+        audioSwitchTask?.cancel()
+        audioSwitchTask = nil
         server.stop()
         isStreaming = false
         isConnecting = false

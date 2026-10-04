@@ -145,10 +145,13 @@ public struct ContentView: View {
                 // Center Component: Drop Zone / Media Deck
                 DropZoneView(viewModel: viewModel)
 
-                // Subtitle Settings (Only shown when a file is selected and not streaming)
+                // Audio & Subtitle Track Settings (Only shown when a file is selected and not streaming)
                 if viewModel.selectedFileURL != nil && !viewModel.isStreaming {
-                    SubtitlePickerView(viewModel: viewModel)
-                        .transition(.opacity.combined(with: .move(edge: .top)))
+                    VStack(spacing: 8) {
+                        AudioPickerView(viewModel: viewModel)
+                        SubtitlePickerView(viewModel: viewModel)
+                    }
+                    .transition(.opacity.combined(with: .move(edge: .top)))
                 }
 
                 // Sleep Prevention Settings

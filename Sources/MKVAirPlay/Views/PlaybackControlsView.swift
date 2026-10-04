@@ -48,7 +48,7 @@ public struct PlaybackControlsView: View {
                 // Active Playback Controls Deck (Liquid Glass)
                 VStack(spacing: 16) {
                     // Status Header
-                    HStack {
+                    HStack(spacing: 8) {
                         LiquidGlassPill(
                             viewModel.playbackState.title,
                             systemImage: viewModel.playbackState == .playing ? "play.circle.fill" : "pause.circle.fill",
@@ -57,7 +57,62 @@ public struct PlaybackControlsView: View {
 
                         Spacer()
 
-                        // Subtitle Dropdown Menu (Replacing redundant TV name)
+                        // Audio Track Dropdown Menu
+                        if !viewModel.availableAudioTracks.isEmpty {
+                            Menu {
+                                ForEach(viewModel.availableAudioTracks) { track in
+                                    Button(action: {
+                                        viewModel.selectAudioTrack(track)
+                                    }) {
+                                        HStack {
+                                            Text(track.displayName)
+                                            if viewModel.selectedAudioTrack?.id == track.id {
+                                                Image(systemName: "checkmark")
+                                            }
+                                        }
+                                    }
+                                }
+
+                                Divider()
+
+                                Button(action: {
+                                    viewModel.promptExternalAudioFile()
+                                }) {
+                                    Label("Load External Audio Track...", systemImage: "plus.circle")
+                                }
+                            } label: {
+                                HStack(spacing: 5) {
+                                    Image(systemName: "speaker.wave.2.fill")
+                                        .font(.system(size: 11))
+                                    Text(viewModel.selectedAudioTrack?.shortDisplayName ?? "Audio")
+                                        .font(.system(size: 11, weight: .medium, design: .rounded))
+                                        .lineLimit(1)
+                                    Image(systemName: "chevron.up.chevron.down")
+                                        .font(.system(size: 8, weight: .bold))
+                                        .foregroundColor(.secondary)
+                                }
+                                .padding(.horizontal, 9)
+                                .padding(.vertical, 4.5)
+                                .background(
+                                    Capsule()
+                                        .fill(Color.purple.opacity(0.18))
+                                )
+                                .overlay(
+                                    Capsule()
+                                        .strokeBorder(
+                                            LinearGradient(colors: [Color.purple.opacity(0.6), Color.purple.opacity(0.2)], startPoint: .topLeading, endPoint: .bottomTrailing),
+                                            lineWidth: 0.8
+                                        )
+                                )
+                                .foregroundColor(.purple)
+                            }
+                            .menuStyle(.borderlessButton)
+                            .fixedSize()
+                            .disabled(viewModel.isConnecting)
+                            .help("Select audio track")
+                        }
+
+                        // Subtitle Dropdown Menu
                         Menu {
                             ForEach(viewModel.availableSubtitles) { track in
                                 Button(action: {
