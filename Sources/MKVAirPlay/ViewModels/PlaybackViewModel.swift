@@ -61,7 +61,7 @@ public final class PlaybackViewModel: ObservableObject {
         }
     }
 
-    @Published public var windowContentHeight: CGFloat = 430
+    @Published public var windowContentHeight: CGFloat = 508
 
     @Published public var isBatteryLidSleepAuthorized: Bool = SleepManager.checkBatteryAuthorization()
     @Published public var isOnBattery: Bool = SleepManager.getPowerStatus().isOnBattery

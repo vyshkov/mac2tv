@@ -15,7 +15,7 @@ struct MKVAirPlayApp: App {
                 }
         }
         .windowResizability(.contentSize)
-        .defaultSize(width: 520, height: 430)
+        .defaultSize(width: 520, height: 508)
         .handlesExternalEvents(matching: ["*"])
         .commands {
             CommandGroup(replacing: .newItem) { }
@@ -120,9 +120,22 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
         bringTitlebarToFront(in: window)
 
         let targetWidth: CGFloat = 520
-        let targetHeight: CGFloat = currentContentHeight > 100 ? currentContentHeight : 430
-        window.minSize = NSSize(width: targetWidth, height: targetHeight)
-        window.maxSize = NSSize(width: targetWidth, height: targetHeight)
+        let targetContentH: CGFloat = currentContentHeight > 100 ? currentContentHeight : 508
+        let targetFrameH = targetContentH + titlebarHeight(for: window)
+        window.minSize = NSSize(width: targetWidth, height: targetFrameH)
+        window.maxSize = NSSize(width: targetWidth, height: targetFrameH)
+        window.contentMinSize = NSSize(width: targetWidth, height: targetContentH)
+        window.contentMaxSize = NSSize(width: targetWidth, height: targetContentH)
+    }
+
+    private func titlebarHeight(for window: NSWindow) -> CGFloat {
+        if window.contentLayoutRect.height > 0 && window.frame.height > 0 {
+            let diff = window.frame.height - window.contentLayoutRect.height
+            if diff >= 0 {
+                return diff
+            }
+        }
+        return 28.0
     }
 
     private func bringTitlebarToFront(in window: NSWindow) {
@@ -194,9 +207,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
                         self.updateWindowHeight(self.currentContentHeight)
                     } else {
                         let targetWidth: CGFloat = 520
-                        let targetHeight: CGFloat = 430
+                        let targetContentH: CGFloat = 508
+                        let targetFrameH = targetContentH + self.titlebarHeight(for: window)
                         var frame = window.frame
-                        frame.size = NSSize(width: targetWidth, height: targetHeight)
+                        frame.size = NSSize(width: targetWidth, height: targetFrameH)
                         self.isProgrammaticResize = true
                         window.setFrame(frame, display: true, animate: false)
                         self.isProgrammaticResize = false
@@ -213,22 +227,25 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
         self.mainWindow = window
         configureWindow(window)
 
-        let targetHeight = ceil(contentHeight)
-        guard targetHeight > 100 else { return }
+        let targetContentH = ceil(contentHeight)
+        guard targetContentH > 100 else { return }
 
-        currentContentHeight = targetHeight
+        currentContentHeight = targetContentH
         let targetWidth: CGFloat = 520
+        let targetFrameH = targetContentH + titlebarHeight(for: window)
 
-        window.minSize = NSSize(width: targetWidth, height: targetHeight)
-        window.maxSize = NSSize(width: targetWidth, height: targetHeight)
+        window.minSize = NSSize(width: targetWidth, height: targetFrameH)
+        window.maxSize = NSSize(width: targetWidth, height: targetFrameH)
+        window.contentMinSize = NSSize(width: targetWidth, height: targetContentH)
+        window.contentMaxSize = NSSize(width: targetWidth, height: targetContentH)
 
         let currentFrame = window.frame
-        if abs(currentFrame.size.height - targetHeight) > 1 || abs(currentFrame.size.width - targetWidth) > 1 {
+        if abs(currentFrame.size.height - targetFrameH) > 1 || abs(currentFrame.size.width - targetWidth) > 1 {
             var newFrame = currentFrame
-            let heightDiff = targetHeight - currentFrame.size.height
+            let heightDiff = targetFrameH - currentFrame.size.height
             // Keep top-left anchored in screen coordinates
             newFrame.origin.y -= heightDiff
-            newFrame.size = NSSize(width: targetWidth, height: targetHeight)
+            newFrame.size = NSSize(width: targetWidth, height: targetFrameH)
 
             // Constrain within visible screen bounds
             if let screen = window.screen ?? NSScreen.main {
@@ -257,9 +274,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
         if isProgrammaticResize {
             return frameSize
         }
-        // Force the window to remain at 520 width and current content height
-        let targetHeight = currentContentHeight > 100 ? currentContentHeight : sender.frame.size.height
-        return NSSize(width: 520, height: targetHeight)
+        // Force the window to remain at 520 width and current content height + titlebar height
+        let targetContentH = currentContentHeight > 100 ? currentContentHeight : 508
+        let targetFrameH = targetContentH + titlebarHeight(for: sender)
+        return NSSize(width: 520, height: targetFrameH)
     }
 
     func windowShouldZoom(_ window: NSWindow, toFrame newFrame: NSRect) -> Bool {
@@ -310,8 +328,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
     }
 
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
-        showMainWindow()
-        return true
+        if let window = mainWindow, window.isVisible && !window.isMiniaturized {
+            window.makeKeyAndOrderFront(nil)
+            NSApp.activate(ignoringOtherApps: true)
+        } else {
+            showMainWindow()
+        }
+        return false
     }
 
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
