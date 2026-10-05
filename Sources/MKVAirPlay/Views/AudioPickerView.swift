@@ -50,7 +50,7 @@ public struct AudioPickerView: View {
                                     viewModel.selectAudioTrack(track)
                                 }) {
                                     HStack {
-                                        Text(track.displayName)
+                                        Text(AudioHelper.isDefaultOrFirstTrack(track, in: viewModel.availableAudioTracks) ? "\(track.displayName) (Default)" : track.displayName)
                                         if viewModel.selectedAudioTrack?.id == track.id {
                                             Image(systemName: "checkmark")
                                         }

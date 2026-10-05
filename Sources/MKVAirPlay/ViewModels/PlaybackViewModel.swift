@@ -182,7 +182,7 @@ public final class PlaybackViewModel: ObservableObject {
                 NSLog("[PlaybackViewModel] Found subtitle: %@", firstTrack.displayName)
             }
 
-            if let defaultAudio = audios.first(where: { $0.isDefault }) ?? audios.first {
+            if let defaultAudio = AudioHelper.defaultTrack(in: audios) {
                 self.selectedAudioTrack = defaultAudio
                 NSLog("[PlaybackViewModel] Selected default audio track: %@", defaultAudio.displayName)
             }
@@ -516,10 +516,9 @@ public final class PlaybackViewModel: ObservableObject {
 
                 // 1b. Prepare audio stream if alternate track selected
                 var mediaStreamPath = fileURL.path
-                if let audioTrack = selectedAudioTrack {
-                    if !AudioHelper.isDefaultOrFirstTrack(audioTrack, in: availableAudioTracks) {
-                        statusMessage = "Preparing audio track: \(audioTrack.displayName)..."
-                    }
+                if let audioTrack = selectedAudioTrack,
+                   !AudioHelper.isDefaultOrFirstTrack(audioTrack, in: availableAudioTracks) {
+                    statusMessage = "Preparing audio track: \(audioTrack.displayName)..."
                     let preparedMediaURL = try await AudioHelper.prepareAudioStream(selectedTrack: audioTrack, for: fileURL, allTracks: availableAudioTracks)
                     mediaStreamPath = preparedMediaURL.path
                 }

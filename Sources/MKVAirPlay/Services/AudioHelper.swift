@@ -124,15 +124,17 @@ public enum AudioHelper {
         return tracks
     }
 
+    public static func defaultTrack(in allTracks: [AudioTrack]) -> AudioTrack? {
+        if let explicit = allTracks.first(where: { $0.externalURL == nil && $0.isDefault }) {
+            return explicit
+        }
+        return allTracks.first(where: { $0.externalURL == nil }) ?? allTracks.first
+    }
+
     public static func isDefaultOrFirstTrack(_ track: AudioTrack, in allTracks: [AudioTrack]) -> Bool {
         if track.externalURL != nil { return false }
-        guard let first = allTracks.first else { return true }
-        if track.id == first.id {
-            // First audio track is default unless an alternate track is explicitly flagged default
-            let otherDefault = allTracks.dropFirst().contains(where: { $0.isDefault })
-            return !otherDefault
-        }
-        return false
+        guard let def = defaultTrack(in: allTracks) else { return false }
+        return track.id == def.id
     }
 
     public static func prepareAudioStream(selectedTrack: AudioTrack, for videoURL: URL, allTracks: [AudioTrack]) async throws -> URL {
